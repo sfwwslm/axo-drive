@@ -1,0 +1,23 @@
+name: Release
+
+run-name: "v${{ inputs.version }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App version (x.y.z)"
+        required: true
+        type: string
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      app_version: ${{ inputs.version }}
+      release_name: "Version ${{ inputs.version }}"
+      release_tag: "${{ inputs.version }}"
+      prerelease: false
+      delete_release: false

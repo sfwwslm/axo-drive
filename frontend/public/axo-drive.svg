@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-label="AxoDrive icon">
+  <rect width="256" height="256" rx="56" fill="#E8F0FA"/>
+  <path
+    d="M64 92C64 71.908 80.908 55 101 55H155C175.092 55 192 71.908 192 92V160C192 180.092 175.092 197 155 197H101C80.908 197 64 180.092 64 160V92Z"
+    fill="#D4E5F6"
+  />
+  <path
+    d="M128 74C160.078 74 186 99.922 186 132C186 164.078 160.078 190 128 190C95.922 190 70 164.078 70 132C70 99.922 95.922 74 128 74Z"
+    fill="#F7FBFF"
+  />
+  <path
+    d="M84 108L56 88"
+    stroke="#3B82F6"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+  <path
+    d="M172 108L200 88"
+    stroke="#3B82F6"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+  <path
+    d="M96 150C96 150 112 162 128 162C144 162 160 150 160 150"
+    stroke="#1D4ED8"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+  <circle cx="104" cy="124" r="8" fill="#1E3A8A"/>
+  <circle cx="152" cy="124" r="8" fill="#1E3A8A"/>
+</svg>
