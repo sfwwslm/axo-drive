@@ -1,0 +1,75 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:root {
+  font-family:
+    "Space Grotesk",
+    "SF Pro Display",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-weight: 400;
+  color: #0b1220;
+  background-color: #dfe6f0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --glass-bg: rgba(255, 255, 255, 0.22);
+  --glass-strong: rgba(255, 255, 255, 0.32);
+  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-shadow: 0 35px 90px rgba(15, 23, 42, 0.2);
+  --glass-blur: 22px;
+  --accent: #0f4c81;
+  --accent-strong: #0a2f4f;
+  --accent-soft: rgba(15, 76, 129, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, #f6f2ff 0%, transparent 55%),
+    radial-gradient(circle at 15% 65%, #e1fbff 0%, transparent 45%),
+    radial-gradient(circle at 85% 25%, #ffe8d6 0%, transparent 45%),
+    linear-gradient(140deg, #e5edf7 0%, #f7f8fb 100%);
+  position: relative;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.6;
+  z-index: 0;
+  pointer-events: none;
+}
+
+body::before {
+  top: -120px;
+  right: 10%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.6), transparent 70%);
+}
+
+body::after {
+  bottom: -140px;
+  left: 5%;
+  background: radial-gradient(
+    circle,
+    rgba(248, 113, 113, 0.35),
+    transparent 70%
+  );
+}

@@ -1,0 +1,132 @@
+name: Publish
+
+on:
+  workflow_call:
+    inputs:
+      app_version:
+        required: true
+        type: string
+      release_name:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      prerelease:
+        required: false
+        type: boolean
+        default: false
+      delete_release:
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build backend
+        run: cargo build --release --locked
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cp target/release/axo-drive axo-drive
+          tar -czf axo-drive_${{ inputs.app_version }}_x86_64-unknown-linux-gnu.tar.gz axo-drive
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item target\release\axo-drive.exe -Destination axo-drive.exe
+          Compress-Archive -Path axo-drive.exe -DestinationPath axo-drive_${{ inputs.app_version }}_x86_64-pc-windows-msvc.zip
+
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: axo-drive-linux
+          path: axo-drive_${{ inputs.app_version }}_x86_64-unknown-linux-gnu.tar.gz
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: axo-drive-windows
+          path: axo-drive_${{ inputs.app_version }}_x86_64-pc-windows-msvc.zip
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Delete existing release
+        if: inputs.delete_release == true
+        run: |
+          gh release delete "${{ inputs.release_tag }}" --yes --cleanup-tag || true
+          sleep 1
+
+      - name: Create release
+        env:
+          tag: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_name }}
+          prerelease: ${{ inputs.prerelease }}
+        run: |
+          if [ "$prerelease" = "true" ]; then
+            gh release create "$tag" --title "$name" --notes "See commit history for details." --prerelease
+          else
+            gh release create "$tag" --title "$name" --notes "See commit history for details."
+          fi
+
+      - name: Upload artifacts to release
+        run: |
+          files=$(find dist -type f)
+          if [ -z "$files" ]; then
+            echo "No release artifacts found under dist/" >&2
+            exit 1
+          fi
+          gh release upload "${{ inputs.release_tag }}" $files --clobber
