@@ -1,3 +1,8 @@
+//! Storage utilities for file operations under the configured root directory.
+//!
+//! The storage layer normalizes user paths, blocks symlink traversal, and
+//! exposes a small API for listing, creating, and deleting entries.
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::cmp::Ordering;
@@ -7,24 +12,29 @@ use std::time::{Duration, UNIX_EPOCH};
 use tokio::fs;
 use tokio::io::ErrorKind;
 
+/// Filesystem-backed storage rooted at a dedicated directory.
 #[derive(Clone, Debug)]
 pub struct Storage {
     root: PathBuf,
 }
 
 impl Storage {
+    /// Create a new storage instance rooted at the provided path.
     pub fn new(root: PathBuf) -> Self {
         Self { root }
     }
 
+    /// Ensure the root directory exists on disk.
     pub async fn ensure_root(&self) -> io::Result<()> {
         fs::create_dir_all(&self.root).await
     }
 
+    /// Return the absolute path to the storage root.
     pub fn root_path(&self) -> &Path {
         &self.root
     }
 
+    /// Resolve and validate a relative path, optionally allowing a missing leaf.
     pub async fn resolve_path_checked(
         &self,
         relative: &str,
@@ -36,6 +46,7 @@ impl Storage {
         Ok(target)
     }
 
+    /// Resolve and validate the storage root path.
     pub async fn resolve_root_checked(&self) -> Result<PathBuf, StorageError> {
         let target = self.resolve(None)?;
         self.ensure_no_symlink_components(&target, false).await?;
@@ -93,6 +104,7 @@ impl Storage {
         Ok(())
     }
 
+    /// List the contents of a directory, returning sorted metadata entries.
     pub async fn list_dir(&self, relative: Option<&str>) -> Result<Vec<FileEntry>, StorageError> {
         let target = match relative {
             Some(path) => self.resolve_path_checked(path, false).await?,
@@ -137,6 +149,7 @@ impl Storage {
         Ok(entries)
     }
 
+    /// Delete a file or directory (recursively) under the storage root.
     pub async fn delete_path(&self, relative: &str) -> Result<(), StorageError> {
         let target = self.resolve_path_checked(relative, false).await?;
         let metadata = fs::metadata(&target).await?;
@@ -148,6 +161,7 @@ impl Storage {
         Ok(())
     }
 
+    /// Create a directory and any missing parents under the storage root.
     pub async fn create_dir(&self, relative: &str) -> Result<(), StorageError> {
         let target = self.resolve_path_checked(relative, true).await?;
         fs::create_dir_all(target).await?;
@@ -161,9 +175,12 @@ fn format_timestamp(duration: Duration) -> String {
     datetime.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+/// Errors returned by storage operations.
 #[derive(Debug)]
 pub enum StorageError {
+    /// Path was invalid or attempted to escape the storage root.
     InvalidPath,
+    /// Underlying I/O error from filesystem operations.
     Io(io::Error),
 }
 
@@ -173,12 +190,18 @@ impl From<io::Error> for StorageError {
     }
 }
 
+/// File or directory metadata returned by `list_dir`.
 #[derive(Serialize)]
 pub struct FileEntry {
+    /// Base name of the file or directory.
     pub name: String,
+    /// Storage-relative path using forward slashes.
     pub path: String,
+    /// True when the entry is a directory.
     pub is_dir: bool,
+    /// Size in bytes for files; 0 for directories.
     pub size: u64,
+    /// Last modified timestamp formatted for display.
     pub modified: Option<String>,
 }
 
