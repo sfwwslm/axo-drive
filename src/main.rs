@@ -1,3 +1,9 @@
+//! AxoDrive server binary.
+//!
+//! This crate wires together HTTP/WebDAV routing, authentication, upload
+//! handling, and static frontend delivery. The main entry point builds the
+//! Axum router, configures TLS, and starts HTTP/HTTPS listeners.
+
 mod storage;
 
 use axum::extract::{DefaultBodyLimit, Extension, Json, Query, connect_info::ConnectInfo};
@@ -67,6 +73,7 @@ const DEFAULT_UPLOAD_TEMP_TTL_SECS: u64 = 24 * 60 * 60;
 const SESSION_PRUNE_INTERVAL_SECS: u64 = 300;
 const UPLOAD_CLEAN_INTERVAL_SECS: u64 = 900;
 
+/// CLI arguments and environment configuration for the server.
 #[derive(Parser, Debug)]
 #[command(name = "axo-drive", version = VERSION_INFO, about = "AxoDrive server")]
 struct Args {
@@ -184,6 +191,7 @@ struct Args {
     cors_origins: Option<String>,
 }
 
+/// Authentication and session configuration shared by handlers.
 struct AuthConfig {
     username: String,
     password: String,
@@ -195,16 +203,19 @@ struct AuthConfig {
     login_lockout: Duration,
 }
 
+/// Tracks a single active session and its expiration time.
 struct SessionEntry {
     expires_at: Instant,
 }
 
+/// State for rate-limiting failed login attempts per IP.
 struct LoginAttempt {
     window_start: Instant,
     failures: u32,
     locked_until: Option<Instant>,
 }
 
+/// Upload limits and cleanup settings shared by handlers.
 struct UploadConfig {
     max_total_size: u64,
     max_chunks: u64,
@@ -213,6 +224,7 @@ struct UploadConfig {
 }
 
 #[derive(Serialize)]
+/// Build and version metadata returned by the version API.
 struct VersionInfo {
     version: &'static str,
     build_time: &'static str,
@@ -220,12 +232,14 @@ struct VersionInfo {
 }
 
 #[derive(Clone, Copy)]
+/// Request scheme marker used to construct absolute URLs.
 enum RequestScheme {
     Http,
     Https,
 }
 
 impl RequestScheme {
+    /// Returns true when the request was served over HTTPS.
     fn is_https(self) -> bool {
         matches!(self, RequestScheme::Https)
     }
@@ -233,8 +247,10 @@ impl RequestScheme {
 
 #[derive(RustEmbed)]
 #[folder = "frontend/dist"]
+/// Embedded frontend build artifacts served by the fallback handler.
 struct FrontendAssets;
 
+/// Starts the AxoDrive server and blocks until shutdown.
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     init_logging();
@@ -354,6 +370,7 @@ async fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// Build a TLS config from provided cert/key or a generated self-signed pair.
 async fn build_rustls_config(args: &Args, host: IpAddr) -> Result<RustlsConfig, std::io::Error> {
     if let (Some(cert), Some(key)) = (&args.tls_cert, &args.tls_key) {
         info!(
@@ -377,6 +394,7 @@ async fn build_rustls_config(args: &Args, host: IpAddr) -> Result<RustlsConfig, 
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
+/// Create temporary self-signed certificate and key files for the given host.
 fn generate_self_signed_paths(host: IpAddr) -> Result<(PathBuf, PathBuf), std::io::Error> {
     let mut names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
     match host {
