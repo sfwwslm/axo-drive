@@ -311,15 +311,18 @@ async fn main() -> Result<(), std::io::Error> {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
-                    let client_ip = resolve_client_ip(
-                        request.headers(),
-                        request
-                            .extensions()
-                            .get::<ConnectInfo<SocketAddr>>()
-                            .map(|info| info.0.ip()),
-                    )
-                    .map(|ip| ip.to_string())
-                    .unwrap_or_else(|| "unknown".to_string());
+                    let forwarded_ip = request
+                        .headers()
+                        .get("x-forwarded-for")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.split(',').next().unwrap_or("").trim().to_string());
+                    let connect_ip = request
+                        .extensions()
+                        .get::<ConnectInfo<SocketAddr>>()
+                        .map(|ConnectInfo(addr)| addr.to_string());
+                    let client_ip = forwarded_ip
+                        .or(connect_ip)
+                        .unwrap_or_else(|| "unknown".to_string());
 
                     info_span!(
                         env!("CARGO_CRATE_NAME"),
