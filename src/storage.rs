@@ -1,7 +1,7 @@
-//! Storage utilities for file operations under the configured root directory.
+//! 存储层工具：在指定根目录下执行文件操作。
 //!
-//! The storage layer normalizes user paths, blocks symlink traversal, and
-//! exposes a small API for listing, creating, and deleting entries.
+//! 存储层负责规范化用户路径、阻止符号链接穿透，并提供
+//! 列表、创建、删除等基础能力。
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -12,6 +12,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use tokio::fs;
 use tokio::io::ErrorKind;
 
+use crate::etag::etag_from_metadata;
 /// Filesystem-backed storage rooted at a dedicated directory.
 #[derive(Clone, Debug)]
 pub struct Storage {
@@ -19,22 +20,22 @@ pub struct Storage {
 }
 
 impl Storage {
-    /// Create a new storage instance rooted at the provided path.
+    /// 创建以指定目录为根的存储实例。
     pub fn new(root: PathBuf) -> Self {
         Self { root }
     }
 
-    /// Ensure the root directory exists on disk.
+    /// 确保根目录在磁盘上存在。
     pub async fn ensure_root(&self) -> io::Result<()> {
         fs::create_dir_all(&self.root).await
     }
 
-    /// Return the absolute path to the storage root.
+    /// 返回存储根目录的绝对路径。
     pub fn root_path(&self) -> &Path {
         &self.root
     }
 
-    /// Resolve and validate a relative path, optionally allowing a missing leaf.
+    /// 解析并校验相对路径，可选择允许末端不存在。
     pub async fn resolve_path_checked(
         &self,
         relative: &str,
@@ -46,7 +47,7 @@ impl Storage {
         Ok(target)
     }
 
-    /// Resolve and validate the storage root path.
+    /// 解析并校验存储根路径。
     pub async fn resolve_root_checked(&self) -> Result<PathBuf, StorageError> {
         let target = self.resolve(None)?;
         self.ensure_no_symlink_components(&target, false).await?;
@@ -104,7 +105,7 @@ impl Storage {
         Ok(())
     }
 
-    /// List the contents of a directory, returning sorted metadata entries.
+    /// 列出目录内容并返回排序后的元数据。
     pub async fn list_dir(&self, relative: Option<&str>) -> Result<Vec<FileEntry>, StorageError> {
         let target = match relative {
             Some(path) => self.resolve_path_checked(path, false).await?,
@@ -131,12 +132,19 @@ impl Storage {
                 .and_then(|ts| ts.duration_since(UNIX_EPOCH).ok())
                 .map(format_timestamp);
 
+            let is_dir = metadata.is_dir();
+            let etag = if is_dir {
+                None
+            } else {
+                Some(etag_from_metadata(&metadata))
+            };
             entries.push(FileEntry {
                 name,
                 path: relative_path,
-                is_dir: metadata.is_dir(),
+                is_dir,
                 size: metadata.len(),
                 modified,
+                etag,
             });
         }
 
@@ -149,7 +157,7 @@ impl Storage {
         Ok(entries)
     }
 
-    /// Delete a file or directory (recursively) under the storage root.
+    /// 删除存储根目录下的文件或目录（递归）。
     pub async fn delete_path(&self, relative: &str) -> Result<(), StorageError> {
         let target = self.resolve_path_checked(relative, false).await?;
         let metadata = fs::metadata(&target).await?;
@@ -161,7 +169,7 @@ impl Storage {
         Ok(())
     }
 
-    /// Create a directory and any missing parents under the storage root.
+    /// 在存储根目录下创建目录及其缺失的父级。
     pub async fn create_dir(&self, relative: &str) -> Result<(), StorageError> {
         let target = self.resolve_path_checked(relative, true).await?;
         fs::create_dir_all(target).await?;
@@ -175,12 +183,12 @@ fn format_timestamp(duration: Duration) -> String {
     datetime.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-/// Errors returned by storage operations.
+/// 存储操作可能返回的错误类型。
 #[derive(Debug)]
 pub enum StorageError {
-    /// Path was invalid or attempted to escape the storage root.
+    /// 路径非法或试图越界存储根目录。
     InvalidPath,
-    /// Underlying I/O error from filesystem operations.
+    /// 文件系统 I/O 错误。
     Io(io::Error),
 }
 
@@ -190,19 +198,21 @@ impl From<io::Error> for StorageError {
     }
 }
 
-/// File or directory metadata returned by `list_dir`.
+/// `list_dir` 返回的文件或目录元数据。
 #[derive(Serialize)]
 pub struct FileEntry {
-    /// Base name of the file or directory.
+    /// 文件或目录名称。
     pub name: String,
-    /// Storage-relative path using forward slashes.
+    /// 存储相对路径（使用 `/` 分隔）。
     pub path: String,
-    /// True when the entry is a directory.
+    /// 是否为目录。
     pub is_dir: bool,
-    /// Size in bytes for files; 0 for directories.
+    /// 文件大小（字节），目录为 0。
     pub size: u64,
-    /// Last modified timestamp formatted for display.
+    /// 格式化后的修改时间。
     pub modified: Option<String>,
+    /// 文件的 ETag（目录为 None）。
+    pub etag: Option<String>,
 }
 
 #[cfg(test)]

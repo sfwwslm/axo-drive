@@ -1,12 +1,13 @@
-//! Chunked upload handlers and temp directory management.
+//! 分片上传处理器与临时目录管理。
 
 use axum::Error as AxumError;
 use axum::body::Body as AxumBody;
 use axum::extract::{Extension, Json, Query};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::Json as JsonResponse;
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Json as JsonResponse, Response};
 use futures_util::stream::StreamExt;
 use http_body_util::BodyExt;
+use httpdate::fmt_http_date;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -17,8 +18,11 @@ use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::config::{MAX_CHUNK_SIZE, UPLOAD_TEMP_DIR};
+use crate::atomic::AtomicFile;
+use crate::config::{DEFAULT_LOCK_WAIT_TIMEOUT_SECS, MAX_CHUNK_SIZE, UPLOAD_TEMP_DIR};
 use crate::error::ApiError;
+use crate::etag::{check_preconditions, etag_from_metadata};
+use crate::locking::LockManager;
 use crate::storage::Storage;
 
 #[derive(Debug)]
@@ -67,6 +71,7 @@ pub(crate) struct UploadAbortRequest {
     upload_id: String,
 }
 
+/// 初始化上传会话，写入元数据。
 pub async fn init_upload(
     Extension(storage): Extension<Arc<Storage>>,
     Extension(upload): Extension<Arc<UploadConfig>>,
@@ -125,6 +130,7 @@ pub async fn init_upload(
     Ok(JsonResponse(UploadInitResponse { upload_id }))
 }
 
+/// 上传单个分片。
 pub async fn upload_chunk(
     Query(UploadChunkQuery { upload_id }): Query<UploadChunkQuery>,
     headers: HeaderMap,
@@ -193,11 +199,14 @@ pub async fn upload_chunk(
     Ok(StatusCode::CREATED)
 }
 
+/// 合并分片并原子替换目标文件。
 pub async fn complete_upload(
+    headers: HeaderMap,
     Extension(storage): Extension<Arc<Storage>>,
+    Extension(lock_manager): Extension<Arc<LockManager>>,
     Extension(upload): Extension<Arc<UploadConfig>>,
     Json(payload): Json<UploadCompleteRequest>,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Response, ApiError> {
     if payload.upload_id.trim().is_empty() {
         return Err(ApiError::BadRequest("upload_id is required".into()));
     }
@@ -263,26 +272,51 @@ pub async fn complete_upload(
         }
     }
 
+    let _guard = lock_manager
+        .lock_path_with_timeout(
+            &metadata.name,
+            std::time::Duration::from_secs(DEFAULT_LOCK_WAIT_TIMEOUT_SECS),
+        )
+        .await
+        .map_err(|_| ApiError::Conflict("path locked".into()))?;
     let target = storage.resolve_path_checked(&metadata.name, true).await?;
+    let existing = match fs::metadata(&target).await {
+        Ok(metadata) => Some(metadata),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(ApiError::Internal(err.to_string())),
+    };
+    let exists = existing.is_some();
+    let etag = existing.as_ref().map(etag_from_metadata);
+    check_preconditions(&headers, etag.as_deref(), exists)?;
+
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
             .await
             .map_err(|err| ApiError::Internal(err.to_string()))?;
     }
-    let mut output = File::create(&target)
-        .await
-        .map_err(|err| ApiError::Internal(err.to_string()))?;
 
-    let mut total_written: u64 = 0;
-    for (_, path) in &parts {
-        let mut part_file = File::open(path)
-            .await
-            .map_err(|err| ApiError::Internal(err.to_string()))?;
-        let copied = tokio::io::copy(&mut part_file, &mut output)
-            .await
-            .map_err(|err| ApiError::Internal(err.to_string()))?;
-        total_written += copied;
+    let mut atomic = AtomicFile::new(&target).await?;
+    let write_result: Result<u64, ApiError> = async {
+        let mut total_written: u64 = 0;
+        for (_, path) in &parts {
+            let mut part_file = File::open(path)
+                .await
+                .map_err(|err| ApiError::Internal(err.to_string()))?;
+            let copied = tokio::io::copy(&mut part_file, atomic.file_mut())
+                .await
+                .map_err(|err| ApiError::Internal(err.to_string()))?;
+            total_written += copied;
+        }
+        Ok(total_written)
     }
+    .await;
+    let total_written = match write_result {
+        Ok(value) => value,
+        Err(err) => {
+            atomic.cleanup().await;
+            return Err(err);
+        }
+    };
 
     if metadata.total_size > 0 && total_written != metadata.total_size {
         warn!(
@@ -291,8 +325,10 @@ pub async fn complete_upload(
             actual = total_written,
             "size mismatch after merge"
         );
+        atomic.cleanup().await;
         return Err(ApiError::BadRequest("size mismatch".into()));
     }
+    atomic.finalize().await?;
 
     fs::remove_dir_all(&temp_dir)
         .await
@@ -304,9 +340,27 @@ pub async fn complete_upload(
         total_size = metadata.total_size,
         "upload complete"
     );
-    Ok(StatusCode::CREATED)
+    let metadata = fs::metadata(&target)
+        .await
+        .map_err(|err| ApiError::Internal(err.to_string()))?;
+    let mut response_headers = HeaderMap::new();
+    let etag = etag_from_metadata(&metadata);
+    response_headers.insert(
+        header::ETAG,
+        HeaderValue::from_str(&etag).map_err(|_| ApiError::Internal("响应头构建失败".into()))?,
+    );
+    if let Ok(modified) = metadata.modified() {
+        let value = fmt_http_date(modified);
+        response_headers.insert(
+            header::LAST_MODIFIED,
+            HeaderValue::from_str(&value)
+                .map_err(|_| ApiError::Internal("响应头构建失败".into()))?,
+        );
+    }
+    Ok((StatusCode::CREATED, response_headers).into_response())
 }
 
+/// 中止上传并清理临时目录。
 pub async fn abort_upload(
     Extension(storage): Extension<Arc<Storage>>,
     Json(payload): Json<UploadAbortRequest>,
@@ -330,6 +384,7 @@ pub async fn abort_upload(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// 返回上传临时目录的根路径。
 pub fn upload_temp_root(storage: &Storage) -> PathBuf {
     let temp_path = Path::new(UPLOAD_TEMP_DIR);
     if temp_path.is_absolute() {
@@ -354,6 +409,7 @@ pub fn upload_temp_root(storage: &Storage) -> PathBuf {
     parent.join(temp_path)
 }
 
+/// 统计当前活跃的上传临时目录数量。
 pub async fn count_upload_temp_dirs(storage: &Storage) -> Result<u64, ApiError> {
     let temp_root = upload_temp_root(storage);
     if fs::metadata(&temp_root).await.is_err() {
@@ -379,6 +435,7 @@ pub async fn count_upload_temp_dirs(storage: &Storage) -> Result<u64, ApiError> 
     Ok(count)
 }
 
+/// 清理过期的上传临时目录。
 pub async fn cleanup_upload_temp(
     storage: &Storage,
     upload: &UploadConfig,
@@ -425,7 +482,7 @@ mod tests {
     use super::*;
     use axum::Json;
     use axum::extract::{Extension, Query};
-    use axum::http::HeaderValue;
+    use axum::http::{HeaderMap, HeaderValue};
     use std::sync::Arc;
     use std::time::Duration;
     use tempfile::tempdir;
@@ -435,6 +492,7 @@ mod tests {
         DEFAULT_UPLOAD_MAX_CHUNKS, DEFAULT_UPLOAD_MAX_CONCURRENT, DEFAULT_UPLOAD_MAX_SIZE,
         DEFAULT_UPLOAD_TEMP_TTL_SECS,
     };
+    use crate::locking::LockManager;
 
     fn make_storage() -> (tempfile::TempDir, Arc<Storage>) {
         let temp = tempdir().expect("tempdir");
@@ -473,6 +531,7 @@ mod tests {
     async fn upload_flow_missing_chunk_returns_error() {
         let (_temp, storage) = make_storage();
         let upload = make_upload_config();
+        let lock_manager = Arc::new(LockManager::new());
         let JsonResponse(init) = init_upload(
             Extension(storage.clone()),
             Extension(upload.clone()),
@@ -499,7 +558,9 @@ mod tests {
         .unwrap_or_else(|_| panic!("upload chunk failed"));
 
         let result = complete_upload(
+            HeaderMap::new(),
             Extension(storage),
+            Extension(lock_manager),
             Extension(upload.clone()),
             Json(UploadCompleteRequest {
                 upload_id: init.upload_id,
@@ -514,6 +575,7 @@ mod tests {
     async fn upload_flow_success_cleans_temp_dir() {
         let (temp, storage) = make_storage();
         let upload = make_upload_config();
+        let lock_manager = Arc::new(LockManager::new());
         let JsonResponse(init) = init_upload(
             Extension(storage.clone()),
             Extension(upload.clone()),
@@ -540,7 +602,9 @@ mod tests {
         .unwrap_or_else(|_| panic!("upload chunk failed"));
 
         complete_upload(
+            HeaderMap::new(),
             Extension(storage.clone()),
+            Extension(lock_manager),
             Extension(upload.clone()),
             Json(UploadCompleteRequest {
                 upload_id: init.upload_id.clone(),

@@ -1,4 +1,4 @@
-//! HTTP helpers for headers, CORS, and request scheme detection.
+//! HTTP 辅助工具：请求方案识别、CORS 与安全头。
 
 use axum::body::Body as AxumBody;
 use axum::http::{HeaderMap, HeaderValue, Request, StatusCode};
@@ -14,12 +14,13 @@ pub enum RequestScheme {
 }
 
 impl RequestScheme {
-    /// Returns true when the request was served over HTTPS.
+    /// 判断请求是否为 HTTPS。
     pub fn is_https(self) -> bool {
         matches!(self, RequestScheme::Https)
     }
 }
 
+/// 构建 CORS Layer（支持逗号分隔的来源列表）。
 pub fn build_cors_layer(cors_origins: Option<&str>) -> Option<CorsLayer> {
     let origins = cors_origins?
         .split(',')
@@ -47,6 +48,7 @@ pub fn build_cors_layer(cors_origins: Option<&str>) -> Option<CorsLayer> {
     )
 }
 
+/// 从 `x-forwarded-for` 解析客户端 IP。
 pub fn extract_forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
         .get("x-forwarded-for")
@@ -57,10 +59,12 @@ pub fn extract_forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
         .and_then(|value| value.parse::<IpAddr>().ok())
 }
 
+/// 综合转发头与连接信息计算客户端 IP。
 pub fn resolve_client_ip(headers: &HeaderMap, connect_ip: Option<IpAddr>) -> Option<IpAddr> {
     extract_forwarded_ip(headers).or(connect_ip)
 }
 
+/// 判断请求是否为 HTTPS（含反向代理头）。
 pub fn is_https_request(headers: &HeaderMap, scheme: RequestScheme) -> bool {
     if let Some(value) = headers
         .get("x-forwarded-proto")
@@ -71,6 +75,7 @@ pub fn is_https_request(headers: &HeaderMap, scheme: RequestScheme) -> bool {
     scheme.is_https()
 }
 
+/// 添加基础安全响应头。
 pub async fn add_security_headers(
     request: Request<AxumBody>,
     next: middleware::Next,

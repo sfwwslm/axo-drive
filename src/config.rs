@@ -1,4 +1,4 @@
-//! CLI arguments and server configuration defaults.
+//! CLI 参数与服务端默认配置。
 
 use clap::Parser;
 use shadow_rs::formatcp;
@@ -29,6 +29,8 @@ pub const DEFAULT_UPLOAD_MAX_CONCURRENT: u64 = 8;
 pub const DEFAULT_UPLOAD_TEMP_TTL_SECS: u64 = 24 * 60 * 60;
 pub const SESSION_PRUNE_INTERVAL_SECS: u64 = 300;
 pub const UPLOAD_CLEAN_INTERVAL_SECS: u64 = 900;
+/// 获取路径锁的最大等待时间（秒）。
+pub const DEFAULT_LOCK_WAIT_TIMEOUT_SECS: u64 = 10;
 
 /// CLI arguments and environment configuration for the server.
 #[derive(Parser, Debug)]

@@ -417,6 +417,29 @@ header {
   color: #0f172a;
 }
 
+.modal-body {
+  margin: 0 0 1rem;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.conflict-meta {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(226, 232, 240, 0.6);
+  font-size: 0.85rem;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.conflict-meta .etag {
+  font-family: "SFMono-Regular", "JetBrains Mono", "Consolas", monospace;
+  color: #0f172a;
+  word-break: break-all;
+}
+
 .modal-form {
   display: grid;
   gap: 1rem;

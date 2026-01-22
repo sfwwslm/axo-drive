@@ -1,4 +1,4 @@
-//! Shared API error types and conversions.
+//! 统一的 API 错误类型与转换。
 
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -13,6 +13,8 @@ pub enum ApiError {
     RangeNotSatisfiable(u64),
     Unauthorized(HeaderMap),
     Forbidden(String),
+    PreconditionFailed(String),
+    Conflict(String),
     TooManyRequests(u64),
 }
 
@@ -38,6 +40,10 @@ impl IntoResponse for ApiError {
                 (StatusCode::UNAUTHORIZED, headers, "unauthorized").into_response()
             }
             ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg).into_response(),
+            ApiError::PreconditionFailed(msg) => {
+                (StatusCode::PRECONDITION_FAILED, msg).into_response()
+            }
+            ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg).into_response(),
             ApiError::TooManyRequests(retry_after) => {
                 let mut headers = HeaderMap::new();
                 if retry_after > 0

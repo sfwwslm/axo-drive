@@ -1,4 +1,4 @@
-//! Version info handler for the API.
+//! API 版本信息处理器。
 
 use axum::response::Json as JsonResponse;
 use serde::Serialize;
@@ -13,6 +13,7 @@ pub struct VersionInfo {
     build_env: String,
 }
 
+/// 返回当前版本信息。
 pub async fn get_version_info() -> Result<JsonResponse<VersionInfo>, ApiError> {
     let version_info = VersionInfo {
         version: crate::build::PKG_VERSION,

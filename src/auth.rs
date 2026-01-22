@@ -1,4 +1,4 @@
-//! Authentication handlers, session tracking, and login rate limiting.
+//! 认证处理、会话管理与登录限流。
 
 use axum::extract::{Extension, Json, connect_info::ConnectInfo};
 use axum::http::{HeaderMap, HeaderValue, Request, StatusCode, header};
@@ -43,6 +43,7 @@ pub struct LoginAttempt {
     pub locked_until: Option<Instant>,
 }
 
+/// 认证中间件：校验 Cookie 或 Basic 认证。
 pub async fn auth_middleware(
     Extension(auth): Extension<Arc<AuthConfig>>,
     Extension(scheme): Extension<RequestScheme>,
@@ -89,6 +90,7 @@ pub(crate) struct AuthLoginRequest {
     password: String,
 }
 
+/// 登录接口：创建会话并写入 Cookie。
 pub async fn auth_login(
     Extension(auth): Extension<Arc<AuthConfig>>,
     Extension(scheme): Extension<RequestScheme>,
@@ -127,6 +129,7 @@ pub async fn auth_login(
     Ok((jar, StatusCode::NO_CONTENT.into_response()))
 }
 
+/// 登出接口：清理会话并删除 Cookie。
 pub async fn auth_logout(
     Extension(auth): Extension<Arc<AuthConfig>>,
     jar: CookieJar,
@@ -155,6 +158,7 @@ fn is_auth_exempt_path(path: &str) -> bool {
     true
 }
 
+/// 查询当前登录状态。
 pub async fn auth_status(
     Extension(auth): Extension<Arc<AuthConfig>>,
     jar: CookieJar,
@@ -245,12 +249,14 @@ async fn clear_login_failures(auth: &AuthConfig, ip: IpAddr) {
     attempts.remove(&ip);
 }
 
+/// 清理过期会话。
 pub async fn prune_expired_sessions(auth: &AuthConfig) {
     let mut sessions = auth.sessions.lock().await;
     let now = Instant::now();
     sessions.retain(|_, entry| entry.expires_at > now);
 }
 
+/// 清理过期的登录失败记录。
 pub async fn prune_login_attempts(auth: &AuthConfig) {
     let mut attempts = auth.login_attempts.lock().await;
     let now = Instant::now();

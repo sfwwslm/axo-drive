@@ -1,4 +1,4 @@
-//! Embedded frontend asset serving and SPA fallback.
+//! 嵌入式前端资源服务与 SPA 回退。
 
 use axum::body::Body as AxumBody;
 use axum::http::{HeaderMap, HeaderValue, Request, header};
@@ -9,9 +9,10 @@ use crate::error::ApiError;
 
 #[derive(RustEmbed)]
 #[folder = "frontend/dist"]
-/// Embedded frontend build artifacts served by the fallback handler.
+/// 嵌入式前端构建产物。
 pub struct FrontendAssets;
 
+/// 前端资源回退处理器（SPA）。
 pub async fn serve_frontend(req: Request<AxumBody>) -> Result<Response, ApiError> {
     let path = req.uri().path().trim_start_matches('/');
     let requested = if path.is_empty() { "index.html" } else { path };
@@ -28,6 +29,7 @@ pub async fn serve_frontend(req: Request<AxumBody>) -> Result<Response, ApiError
     Err(ApiError::NotFound("not found".into()))
 }
 
+/// 加载指定路径的嵌入式资源。
 fn load_embedded_asset(path: &str) -> Result<Option<Response>, ApiError> {
     let asset = FrontendAssets::get(path);
     let Some(asset) = asset else {

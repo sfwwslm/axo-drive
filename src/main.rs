@@ -1,22 +1,25 @@
-//! AxoDrive server binary.
+//! AxoDrive 服务端二进制入口。
 //!
-//! This crate wires together HTTP/WebDAV routing, authentication, upload
-//! handling, and static frontend delivery. The main entry point builds the
-//! Axum router, configures TLS, and starts HTTP/HTTPS listeners.
+//! 该入口负责组装 HTTP/WebDAV 路由、认证、上传处理与前端静态资源，
+//! 并完成 Axum 路由构建、TLS 配置及 HTTP/HTTPS 监听启动。
 
+mod atomic;
 mod auth;
 mod background;
 mod config;
 mod error;
+mod etag;
 mod files;
 mod frontend;
 mod http;
+mod locking;
 mod logging;
 mod storage;
 mod tls;
 mod upload;
 mod version;
 mod webdav;
+mod webdav_lock;
 
 use axum::extract::{DefaultBodyLimit, Extension, connect_info::ConnectInfo};
 use axum::http::Request;
@@ -24,7 +27,7 @@ use axum::routing::{any, delete, get, patch, post, put};
 use axum::{Router, middleware};
 use axum_server::Handle;
 use clap::Parser;
-use dav_server::{DavHandler, fakels::FakeLs, localfs::LocalFs};
+use dav_server::{DavHandler, localfs::LocalFs};
 use shadow_rs::shadow;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -40,8 +43,10 @@ use crate::auth::AuthConfig;
 use crate::background::spawn_background_tasks;
 use crate::config::Args;
 use crate::http::{RequestScheme, build_cors_layer};
+use crate::locking::LockManager;
 use crate::storage::Storage;
 use crate::upload::UploadConfig;
+use crate::webdav_lock::WebDavLockSystem;
 
 shadow!(build);
 
@@ -69,6 +74,7 @@ async fn main() -> Result<(), std::io::Error> {
         max_concurrent: args.upload_max_concurrent,
         temp_ttl: Duration::from_secs(args.upload_temp_ttl_secs),
     });
+    let lock_manager = Arc::new(LockManager::new());
     let storage_for_tasks = storage.clone();
     let auth_for_tasks = auth_config.clone();
     let upload_for_tasks = upload_config.clone();
@@ -77,7 +83,7 @@ async fn main() -> Result<(), std::io::Error> {
         DavHandler::builder()
             .strip_prefix("/webdav")
             .filesystem(LocalFs::new(storage.root_path(), false, false, false))
-            .locksystem(FakeLs::new())
+            .locksystem(WebDavLockSystem::new())
             .build_handler(),
     );
 
@@ -133,6 +139,7 @@ async fn main() -> Result<(), std::io::Error> {
         .layer(Extension(storage))
         .layer(Extension(auth_config))
         .layer(Extension(upload_config))
+        .layer(Extension(lock_manager))
         .layer(Extension(dav_handler));
 
     if let Some(cors_layer) = build_cors_layer(args.cors_origins.as_deref()) {

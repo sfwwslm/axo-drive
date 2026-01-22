@@ -9,6 +9,7 @@ type FileEntry = {
   is_dir: boolean;
   size: number;
   modified?: string | null;
+  etag?: string | null;
 };
 
 type VersionInfo = {
@@ -61,6 +62,12 @@ const translations = {
     downloadComplete: "下载完成",
     downloadCancelled: "下载已取消",
     downloadFailed: "下载失败",
+    uploadConflictTitle: "文件冲突",
+    uploadConflictMessage: "该文件已在你上传期间被其他人修改。请选择处理方式。",
+    uploadConflictReload: "重新加载并重试",
+    uploadConflictOverwrite: "强制覆盖",
+    uploadConflictSaveAs: "另存为新文件",
+    uploadConflictCancel: "取消上传",
     enterFolderName: "请输入文件夹名称",
     createFolderFailed: "创建目录失败",
     createFolderSuccess: "目录创建成功",
@@ -109,6 +116,13 @@ const translations = {
     downloadComplete: "Download complete",
     downloadCancelled: "Download cancelled",
     downloadFailed: "Download failed",
+    uploadConflictTitle: "File conflict",
+    uploadConflictMessage:
+      "This file was modified while you were uploading. Choose how to proceed.",
+    uploadConflictReload: "Reload and retry",
+    uploadConflictOverwrite: "Overwrite",
+    uploadConflictSaveAs: "Save as copy",
+    uploadConflictCancel: "Cancel upload",
     enterFolderName: "Enter a folder name",
     createFolderFailed: "Failed to create folder",
     createFolderSuccess: "Folder created",
@@ -166,6 +180,15 @@ const isAbortError = (error: unknown) => {
     return true;
   }
   return false;
+};
+
+type UploadConflictAction = "reload" | "overwrite" | "saveAs" | "cancel";
+
+type UploadConflictState = {
+  file: File;
+  targetPath: string;
+  uploadId: string;
+  existing?: FileEntry | null;
 };
 
 type LoginLogoProps = {
@@ -266,12 +289,17 @@ function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [loginFocus, setLoginFocus] = useState(false);
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const [uploadConflict, setUploadConflict] =
+    useState<UploadConflictState | null>(null);
 
   const uploadControllersRef = useRef<AbortController[]>([]);
   const uploadCancelledRef = useRef(false);
   const downloadControllerRef = useRef<AbortController | null>(null);
   const uploadIdsRef = useRef<Set<string>>(new Set());
   const downloadTokenRef = useRef(0);
+  const conflictResolverRef = useRef<
+    ((action: UploadConflictAction) => void) | null
+  >(null);
 
   const listUrl = (path: string) => {
     const params = new URLSearchParams();
@@ -289,7 +317,7 @@ function App() {
       const response = await fetch(listUrl(path));
       if (response.status === 401) {
         setAuthRequired(true);
-        return;
+        return null;
       }
       if (!response.ok) {
         throw new Error(
@@ -298,8 +326,10 @@ function App() {
       }
       const data: FileEntry[] = await response.json();
       setEntries(data);
+      return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : t("readDirFailed"));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -313,6 +343,9 @@ function App() {
     setUploading(false);
     setUploadProgress(null);
     setStatus(t("uploadCancelled"));
+    if (uploadConflict) {
+      resolveConflict("cancel");
+    }
     void abortIncompleteUploads();
   };
 
@@ -403,6 +436,44 @@ function App() {
     await axios
       .post(`${UPLOAD_API}/abort`, { uploadId })
       .catch(() => undefined);
+  };
+
+  const resolveConflict = (action: UploadConflictAction) => {
+    conflictResolverRef.current?.(action);
+    conflictResolverRef.current = null;
+    setUploadConflict(null);
+  };
+
+  const awaitConflictResolution = (state: UploadConflictState) =>
+    new Promise<UploadConflictAction>((resolve) => {
+      conflictResolverRef.current = resolve;
+      setUploadConflict(state);
+    });
+
+  const buildCopyPath = (path: string) => {
+    const parts = path.split("/");
+    const name = parts.pop() ?? path;
+    const dot = name.lastIndexOf(".");
+    const base = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : "";
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace("T", "-")
+      .slice(0, 15);
+    const copyName = `${base} (copy ${timestamp})${ext}`;
+    return [...parts, copyName].filter(Boolean).join("/");
+  };
+
+  const completeUpload = async (
+    uploadId: string,
+    headers?: Record<string, string>,
+  ) => {
+    await axios.post(
+      `${UPLOAD_API}/complete`,
+      { uploadId },
+      headers ? { headers } : undefined,
+    );
   };
 
   const uploadFileInChunks = async (
@@ -520,8 +591,60 @@ function App() {
       await Promise.all(workers);
 
       setStatus(t("verifying"));
-      await axios.post(`${UPLOAD_API}/complete`, { uploadId });
-      completed = true;
+      let headers: Record<string, string> | undefined;
+      const existing = entries.find((entry) => entry.path === targetPath);
+      if (existing?.etag) {
+        headers = { "If-Match": existing.etag };
+      } else if (!existing) {
+        headers = { "If-None-Match": "*" };
+      }
+
+      while (true) {
+        try {
+          await completeUpload(uploadId, headers);
+          completed = true;
+          break;
+        } catch (err) {
+          if (axios.isAxiosError(err) && err.response?.status === 412) {
+            const conflictEntry =
+              entries.find((entry) => entry.path === targetPath) ?? null;
+            const action = await awaitConflictResolution({
+              file,
+              targetPath,
+              uploadId,
+              existing: conflictEntry,
+            });
+            if (action === "overwrite") {
+              headers = undefined;
+              continue;
+            }
+            if (action === "reload") {
+              const data = await fetchEntries(currentPath);
+              const refreshed = data?.find(
+                (entry) => entry.path === targetPath,
+              );
+              if (refreshed?.etag) {
+                headers = { "If-Match": refreshed.etag };
+              } else {
+                headers = { "If-None-Match": "*" };
+              }
+              continue;
+            }
+            if (action === "saveAs") {
+              const newPath = buildCopyPath(targetPath);
+              await abortUpload(uploadId);
+              uploadIdsRef.current.delete(uploadId);
+              await uploadFileInChunks(file, newPath, onChunk);
+              completed = true;
+              break;
+            }
+            await abortUpload(uploadId);
+            uploadIdsRef.current.delete(uploadId);
+            throw new DOMException("Aborted", "AbortError");
+          }
+          throw err;
+        }
+      }
     } finally {
       uploadIdsRef.current.delete(uploadId);
       if (!completed) {
@@ -1055,6 +1178,61 @@ function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {uploadConflict && (
+        <div
+          className="modal-backdrop"
+          onClick={() => resolveConflict("cancel")}
+        >
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h3 className="modal-title">{t("uploadConflictTitle")}</h3>
+            <p className="modal-body">{t("uploadConflictMessage")}</p>
+            {uploadConflict.existing && (
+              <div className="conflict-meta">
+                <span>{uploadConflict.existing.name}</span>
+                <span>
+                  {uploadConflict.existing.modified ?? "—"} ·{" "}
+                  {formatBytes(uploadConflict.existing.size)}
+                </span>
+                {uploadConflict.existing.etag && (
+                  <span className="etag">
+                    ETag: {uploadConflict.existing.etag}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-cancel"
+                onClick={() => resolveConflict("cancel")}
+              >
+                {t("uploadConflictCancel")}
+              </button>
+              <button
+                type="button"
+                className="modal-cancel"
+                onClick={() => resolveConflict("reload")}
+              >
+                {t("uploadConflictReload")}
+              </button>
+              <button
+                type="button"
+                className="modal-cancel"
+                onClick={() => resolveConflict("saveAs")}
+              >
+                {t("uploadConflictSaveAs")}
+              </button>
+              <button
+                type="button"
+                className="modal-submit"
+                onClick={() => resolveConflict("overwrite")}
+              >
+                {t("uploadConflictOverwrite")}
+              </button>
+            </div>
           </div>
         </div>
       )}

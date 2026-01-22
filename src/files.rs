@@ -1,4 +1,4 @@
-//! File listing, download, write, and directory handlers.
+//! 文件列表、下载、写入与目录操作处理器。
 
 use axum::Error as AxumError;
 use axum::body::Body as AxumBody;
@@ -9,14 +9,18 @@ use futures_util::stream::StreamExt;
 use http_body_util::BodyExt;
 use httpdate::{fmt_http_date, parse_http_date};
 use serde::Deserialize;
-use std::io::SeekFrom;
+use std::io::{ErrorKind, SeekFrom};
 use std::sync::Arc;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, info};
 
+use crate::atomic::AtomicFile;
+use crate::config::DEFAULT_LOCK_WAIT_TIMEOUT_SECS;
 use crate::error::ApiError;
+use crate::etag::{check_preconditions, etag_from_metadata};
+use crate::locking::LockManager;
 use crate::storage::{FileEntry, Storage};
 
 #[derive(Deserialize)]
@@ -34,6 +38,7 @@ pub(crate) struct DirCreateBody {
     path: String,
 }
 
+/// 列出目录内容。
 pub async fn list_files(
     Query(query): Query<OptionalPathQuery>,
     Extension(storage): Extension<Arc<Storage>>,
@@ -47,6 +52,7 @@ pub async fn list_files(
     Ok(JsonResponse(entries))
 }
 
+/// 下载文件，支持 Range 请求与缓存相关头。
 pub async fn download_file(
     Query(RequiredPathQuery { path }): Query<RequiredPathQuery>,
     request_headers: HeaderMap,
@@ -78,6 +84,11 @@ pub async fn download_file(
                 .map_err(|_| ApiError::Internal("响应头构建失败".into()))?,
         );
     }
+    let etag = etag_from_metadata(&metadata);
+    response_headers.insert(
+        header::ETAG,
+        HeaderValue::from_str(&etag).map_err(|_| ApiError::Internal("响应头构建失败".into()))?,
+    );
 
     let if_range_matches = match request_headers
         .get(header::IF_RANGE)
@@ -141,51 +152,109 @@ pub async fn download_file(
         .into_response())
 }
 
+/// 写入文件内容，支持条件写入与原子替换。
 pub async fn write_file(
     Query(RequiredPathQuery { path }): Query<RequiredPathQuery>,
+    headers: HeaderMap,
     Extension(storage): Extension<Arc<Storage>>,
+    Extension(lock_manager): Extension<Arc<LockManager>>,
     body: AxumBody,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Response, ApiError> {
     if path.is_empty() {
         return Err(ApiError::BadRequest("path is required".into()));
     }
     info!(path, "write file");
 
+    let _guard = lock_manager
+        .lock_path_with_timeout(
+            &path,
+            std::time::Duration::from_secs(DEFAULT_LOCK_WAIT_TIMEOUT_SECS),
+        )
+        .await
+        .map_err(|_| ApiError::Conflict("path locked".into()))?;
     let target = storage.resolve_path_checked(&path, true).await?;
+    let metadata = match fs::metadata(&target).await {
+        Ok(metadata) => Some(metadata),
+        Err(err) if err.kind() == ErrorKind::NotFound => None,
+        Err(err) => return Err(ApiError::Internal(err.to_string())),
+    };
+    let exists = metadata.is_some();
+    let etag = metadata.as_ref().map(etag_from_metadata);
+    check_preconditions(&headers, etag.as_deref(), exists)?;
+
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
             .await
             .map_err(|err| ApiError::Internal(err.to_string()))?;
     }
-    let mut file = File::create(&target)
+
+    let mut atomic = AtomicFile::new(&target).await?;
+    let write_result: Result<(), ApiError> = async {
+        let mut data_stream = BodyExt::into_data_stream(body);
+        while let Some(chunk) = data_stream.next().await {
+            let chunk = chunk.map_err(|err: AxumError| ApiError::Internal(err.to_string()))?;
+            if !chunk.is_empty() {
+                atomic
+                    .file_mut()
+                    .write_all(&chunk)
+                    .await
+                    .map_err(|err| ApiError::Internal(err.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(err) = write_result {
+        atomic.cleanup().await;
+        return Err(err);
+    }
+    atomic.finalize().await?;
+
+    let metadata = fs::metadata(&target)
         .await
         .map_err(|err| ApiError::Internal(err.to_string()))?;
-    let mut data_stream = BodyExt::into_data_stream(body);
-    while let Some(chunk) = data_stream.next().await {
-        let chunk = chunk.map_err(|err: AxumError| ApiError::Internal(err.to_string()))?;
-        if !chunk.is_empty() {
-            file.write_all(&chunk)
-                .await
-                .map_err(|err| ApiError::Internal(err.to_string()))?;
-        }
+    let mut response_headers = HeaderMap::new();
+    let etag = etag_from_metadata(&metadata);
+    response_headers.insert(
+        header::ETAG,
+        HeaderValue::from_str(&etag).map_err(|_| ApiError::Internal("响应头构建失败".into()))?,
+    );
+    if let Ok(modified) = metadata.modified() {
+        let value = fmt_http_date(modified);
+        response_headers.insert(
+            header::LAST_MODIFIED,
+            HeaderValue::from_str(&value)
+                .map_err(|_| ApiError::Internal("响应头构建失败".into()))?,
+        );
     }
-    Ok(StatusCode::CREATED)
+    Ok((StatusCode::CREATED, response_headers).into_response())
 }
 
+/// 删除文件或目录。
 pub async fn delete_entry(
     Query(RequiredPathQuery { path }): Query<RequiredPathQuery>,
     Extension(storage): Extension<Arc<Storage>>,
+    Extension(lock_manager): Extension<Arc<LockManager>>,
 ) -> Result<StatusCode, ApiError> {
     if path.is_empty() {
         return Err(ApiError::BadRequest("path is required".into()));
     }
+    let _guard = lock_manager
+        .lock_path_with_timeout(
+            &path,
+            std::time::Duration::from_secs(DEFAULT_LOCK_WAIT_TIMEOUT_SECS),
+        )
+        .await
+        .map_err(|_| ApiError::Conflict("path locked".into()))?;
     storage.delete_path(&path).await?;
     info!(path, "delete entry");
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// 创建目录（含父级）。
 pub async fn create_directory(
     Extension(storage): Extension<Arc<Storage>>,
+    Extension(lock_manager): Extension<Arc<LockManager>>,
     payload: Json<DirCreateBody>,
 ) -> Result<StatusCode, ApiError> {
     let DirCreateBody { path } = payload.0;
@@ -194,11 +263,19 @@ pub async fn create_directory(
         return Err(ApiError::BadRequest("path is required".into()));
     }
 
+    let _guard = lock_manager
+        .lock_path_with_timeout(
+            &path,
+            std::time::Duration::from_secs(DEFAULT_LOCK_WAIT_TIMEOUT_SECS),
+        )
+        .await
+        .map_err(|_| ApiError::Conflict("path locked".into()))?;
     storage.create_dir(&path).await?;
     info!(path, "create directory");
     Ok(StatusCode::CREATED)
 }
 
+/// 解析 Range 头，返回可读取的范围。
 fn parse_range(
     value: Option<&HeaderValue>,
     file_size: u64,
@@ -257,8 +334,11 @@ fn parse_range(
 mod tests {
     use super::*;
     use axum::extract::Query;
+    use axum::http::HeaderMap;
     use std::sync::Arc;
     use tempfile::tempdir;
+
+    use crate::locking::LockManager;
 
     fn make_storage() -> (tempfile::TempDir, Arc<Storage>) {
         let temp = tempdir().expect("tempdir");
@@ -270,11 +350,14 @@ mod tests {
     #[tokio::test]
     async fn write_file_rejects_traversal_path() {
         let (_temp, storage) = make_storage();
+        let lock_manager = Arc::new(LockManager::new());
         let result = write_file(
             Query(RequiredPathQuery {
                 path: "../secret.txt".to_string(),
             }),
+            HeaderMap::new(),
             Extension(storage),
+            Extension(lock_manager),
             AxumBody::from("data"),
         )
         .await;

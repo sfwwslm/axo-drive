@@ -1,4 +1,4 @@
-//! TLS certificate loading and self-signed generation.
+//! TLS 证书加载与自签名生成。
 
 use axum_server::tls_rustls::RustlsConfig;
 use rcgen::generate_simple_self_signed;
@@ -9,6 +9,7 @@ use tracing::info;
 
 use crate::config::Args;
 
+/// 构建 Rustls 配置（必要时生成自签名证书）。
 pub async fn build_rustls_config(
     args: &Args,
     host: IpAddr,
@@ -24,6 +25,7 @@ pub async fn build_rustls_config(
     RustlsConfig::from_pem(cert, key).await
 }
 
+/// 生成自签名证书并返回文件路径。
 fn generate_self_signed_paths(host: IpAddr) -> Result<(PathBuf, PathBuf), std::io::Error> {
     let cert = generate_simple_self_signed([host.to_string()])
         .map_err(|err| std::io::Error::other(err.to_string()))?;
