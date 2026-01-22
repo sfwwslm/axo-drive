@@ -1,6 +1,6 @@
 [package]
 name = "axo-drive"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 edition = "2024"
 
 [dependencies]
@@ -26,6 +26,7 @@ shadow-rs = { version = "1.4.0", features = ["metadata"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rcgen = "0.13"
+xmltree = "0.11"
 
 [build-dependencies]
 shadow-rs = { version = "1.4.0" }
