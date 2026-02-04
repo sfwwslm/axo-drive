@@ -38,6 +38,27 @@ const formatBytes = (value: number) => {
   return `${number.toFixed(1)} ${units[index]}`;
 };
 
+const imageExtensions = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "avif",
+]);
+
+const isImageFile = (name: string) => {
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+  const ext = name.slice(dotIndex + 1).toLowerCase();
+  return imageExtensions.has(ext);
+};
+
+const buildPreviewUrl = (path: string) =>
+  `${BASE_API}/download?path=${encodeURIComponent(path)}`;
+
 const CHUNK_SIZE = 16 * 1024 * 1024;
 const CHUNK_CONCURRENCY = 3;
 const FILE_CONCURRENCY = 2;
@@ -276,6 +297,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const previewTouchStartX = useRef<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
@@ -748,6 +771,34 @@ function App() {
     }
   };
 
+  const imageEntries = entries.filter(
+    (entry) => !entry.is_dir && isImageFile(entry.name),
+  );
+
+  const previewEntry =
+    previewIndex !== null ? imageEntries[previewIndex] : null;
+
+  const closePreview = () => setPreviewIndex(null);
+
+  const goPrevPreview = () => {
+    if (previewIndex === null || imageEntries.length === 0) return;
+    setPreviewIndex(
+      (previewIndex - 1 + imageEntries.length) % imageEntries.length,
+    );
+  };
+
+  const goNextPreview = () => {
+    if (previewIndex === null || imageEntries.length === 0) return;
+    setPreviewIndex((previewIndex + 1) % imageEntries.length);
+  };
+
+  useEffect(() => {
+    if (previewIndex === null) return;
+    if (previewIndex < 0 || previewIndex >= imageEntries.length) {
+      setPreviewIndex(null);
+    }
+  }, [previewIndex, imageEntries.length]);
+
   const handleCreateFolder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = folderName.trim();
@@ -1106,20 +1157,42 @@ function App() {
                   <tr key={entry.path}>
                     <td className="col-index">{index + 1}</td>
                     <td className="name-cell">
-                      <span
-                        className="tooltip-wrapper"
-                        data-tooltip={entry.name}
-                      >
-                        <button
-                          type="button"
-                          className={
-                            entry.is_dir ? "entry-name dir" : "entry-name"
-                          }
-                          onClick={() => handleDirectoryClick(entry)}
+                      <div className="name-cell-content">
+                        {!entry.is_dir && isImageFile(entry.name) && (
+                          <button
+                            type="button"
+                            className="file-preview-btn"
+                            onClick={() => {
+                              const idx = imageEntries.findIndex(
+                                (item) => item.path === entry.path,
+                              );
+                              if (idx >= 0) setPreviewIndex(idx);
+                            }}
+                            aria-label={`预览 ${entry.name}`}
+                          >
+                            <img
+                              className="file-preview"
+                              src={buildPreviewUrl(entry.path)}
+                              alt={entry.name}
+                              loading="lazy"
+                            />
+                          </button>
+                        )}
+                        <span
+                          className="tooltip-wrapper"
+                          data-tooltip={entry.name}
                         >
-                          {entry.name}
-                        </button>
-                      </span>
+                          <button
+                            type="button"
+                            className={
+                              entry.is_dir ? "entry-name dir" : "entry-name"
+                            }
+                            onClick={() => handleDirectoryClick(entry)}
+                          >
+                            {entry.name}
+                          </button>
+                        </span>
+                      </div>
                     </td>
                     <td className="col-type">{entry.is_dir ? "📁" : "📄"}</td>
                     <td className="col-size">
@@ -1178,6 +1251,70 @@ function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {previewEntry && (
+        <div className="modal-backdrop" onClick={closePreview}>
+          <div
+            className="modal image-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="image-modal-header">
+              <h3 className="modal-title">{previewEntry.name}</h3>
+              <button
+                type="button"
+                className="image-modal-close"
+                onClick={closePreview}
+              >
+                ×
+              </button>
+            </div>
+            <div
+              className="image-modal-body"
+              onTouchStart={(event) => {
+                previewTouchStartX.current = event.touches[0]?.clientX ?? null;
+              }}
+              onTouchEnd={(event) => {
+                const startX = previewTouchStartX.current;
+                if (startX === null) return;
+                const endX = event.changedTouches[0]?.clientX ?? startX;
+                const delta = endX - startX;
+                previewTouchStartX.current = null;
+                if (Math.abs(delta) < 40) return;
+                if (delta > 0) {
+                  goPrevPreview();
+                } else {
+                  goNextPreview();
+                }
+              }}
+            >
+              {imageEntries.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    className="image-nav-btn left"
+                    onClick={goPrevPreview}
+                    aria-label="上一张"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="image-nav-btn right"
+                    onClick={goNextPreview}
+                    aria-label="下一张"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+              <img
+                src={buildPreviewUrl(previewEntry.path)}
+                alt={previewEntry.name}
+              />
+            </div>
           </div>
         </div>
       )}

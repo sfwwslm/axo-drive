@@ -411,6 +411,95 @@ header {
   border: 1px solid rgba(148, 163, 184, 0.4);
 }
 
+.image-modal {
+  width: min(820px, 92vw);
+  padding: 1rem;
+}
+
+.image-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.image-modal-header .modal-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.image-modal-close {
+  border: none;
+  background: rgba(15, 23, 42, 0.1);
+  color: #0f172a;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.image-modal-body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-height: 70vh;
+  overflow: auto;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 0.75rem;
+  touch-action: pan-y;
+  position: relative;
+}
+
+.image-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(15, 23, 42, 0.35);
+  color: #f8fafc;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.image-nav-btn:hover {
+  background: rgba(15, 23, 42, 0.5);
+  transform: translateY(-50%) scale(1.03);
+}
+
+.image-nav-btn.left {
+  left: 12px;
+}
+
+.image-nav-btn.right {
+  right: 12px;
+}
+
+.image-modal-body img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+}
+
 .modal-title {
   font-size: 1.1rem;
   margin: 0 0 1rem;
@@ -572,6 +661,31 @@ thead th {
   max-width: 380px;
 }
 
+.name-cell-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.file-preview {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.file-preview-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: zoom-in;
+  display: inline-flex;
+}
+
 .col-index {
   width: 56px;
   color: rgba(15, 23, 42, 0.6);
@@ -615,6 +729,7 @@ thead th {
 .tooltip-wrapper {
   position: relative;
   display: block;
+  min-width: 0;
 }
 
 .tooltip-wrapper::after {
@@ -709,6 +824,147 @@ thead th {
 @media (max-width: 768px) {
   .panel-actions {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 1.5rem 1rem 2.75rem;
+    max-width: 100%;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .brand-title {
+    font-size: 1.9rem;
+  }
+
+  .panel {
+    padding: 1.25rem;
+    border-radius: 16px;
+  }
+
+  .controls {
+    width: 100%;
+    gap: 0.6rem;
+  }
+
+  .upload-btn,
+  .cancel-btn,
+  .mkdir-trigger {
+    width: 100%;
+    text-align: center;
+  }
+
+  .footer {
+    position: static;
+  }
+
+  .footer-content {
+    max-width: 100%;
+    padding: 0.6rem 1rem;
+  }
+
+  .version-watermark {
+    position: static;
+    margin-top: 0.35rem;
+  }
+
+  .table-wrapper {
+    border-radius: 12px;
+  }
+
+  th,
+  td {
+    padding: 0.65rem 0.5rem;
+  }
+
+  .col-index,
+  .col-type,
+  .col-modified {
+    display: none;
+  }
+
+  .name-cell {
+    width: 60%;
+  }
+
+  .name-cell-content {
+    gap: 0.45rem;
+  }
+
+  .file-preview {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .col-size {
+    width: 110px;
+  }
+
+  .actions {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .actions button,
+  .actions a {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    text-align: center;
+  }
+
+  .modal {
+    width: min(360px, 92vw);
+    padding: 1.2rem;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .image-modal {
+    width: min(95vw, 520px);
+  }
+
+  .image-modal-body {
+    max-height: 60vh;
+  }
+}
+
+@media (max-width: 520px) {
+  .login-panel {
+    padding: 3.25rem 1.4rem 1.5rem;
+  }
+
+  .login-logo {
+    width: 120px;
+    height: 120px;
+  }
+
+  .login-brand .brand-title {
+    font-size: 2.1rem;
+  }
+
+  .login-tagline {
+    font-size: 0.95rem;
+  }
+
+  .entry-name {
+    font-size: 0.95rem;
+  }
+
+  .actions button,
+  .actions a {
+    font-size: 0.8rem;
   }
 }
 
