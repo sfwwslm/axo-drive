@@ -968,8 +968,15 @@ function App() {
       setLoggingOut(false);
       setAuthRequired(true);
       setEntries([]);
+      setLoginFocus(false);
     }
   };
+
+  useEffect(() => {
+    if (authRequired) {
+      setLoginFocus(false);
+    }
+  }, [authRequired]);
 
   if (!authChecked) {
     return (
