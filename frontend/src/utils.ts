@@ -16,6 +16,18 @@ export const formatBytes = (value: number) => {
   return `${number.toFixed(1)} ${units[index]}`;
 };
 
+// 统一格式化 UTC 时间（YYYY-MM-DD HH:mm:ss）。
+export const formatUtcTimestamp = (date: Date) => {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = pad(date.getUTCMonth() + 1);
+  const day = pad(date.getUTCDate());
+  const hours = pad(date.getUTCHours());
+  const minutes = pad(date.getUTCMinutes());
+  const seconds = pad(date.getUTCSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
 // 支持的图片扩展名集合。
 const imageExtensions = new Set([
   "png",

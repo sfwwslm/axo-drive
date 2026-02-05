@@ -33,6 +33,7 @@ import {
   isAbortError,
   isImageFile,
   isVideoFile,
+  formatUtcTimestamp,
   joinPath,
 } from "./utils";
 
@@ -79,6 +80,7 @@ function App() {
   const downloadControllerRef = useRef<AbortController | null>(null);
   const uploadIdsRef = useRef<Set<string>>(new Set());
   const downloadTokenRef = useRef(0);
+  const currentPathRef = useRef(currentPath);
   const conflictResolverRef = useRef<
     ((action: UploadConflictAction) => void) | null
   >(null);
@@ -90,6 +92,26 @@ function App() {
     }
     const query = params.toString();
     return `${BASE_API}/list${query ? `?${query}` : ""}`;
+  };
+
+  const getParentPath = (path: string) => {
+    const index = path.lastIndexOf("/");
+    return index >= 0 ? path.slice(0, index) : "";
+  };
+
+  const shouldUpdateList = (path: string) =>
+    getParentPath(path) === currentPathRef.current;
+
+  const upsertEntry = (entry: FileEntry) => {
+    setEntries((prev) => {
+      const index = prev.findIndex((item) => item.path === entry.path);
+      if (index === -1) {
+        return [...prev, entry];
+      }
+      const next = [...prev];
+      next[index] = { ...prev[index], ...entry };
+      return next;
+    });
   };
 
   const fetchEntries = useCallback(
@@ -207,6 +229,10 @@ function App() {
     fetchEntries(currentPath);
   }, [currentPath, authRequired, authChecked, fetchEntries]);
 
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
+
   const handleAuthError = (err: unknown) => {
     if (axios.isAxiosError(err) && err.response?.status === 401) {
       setAuthRequired(true);
@@ -253,7 +279,7 @@ function App() {
     uploadId: string,
     headers?: Record<string, string>,
   ) => {
-    await axios.post(
+    return axios.post(
       `${UPLOAD_API}/complete`,
       { uploadId },
       headers ? { headers } : undefined,
@@ -385,7 +411,23 @@ function App() {
 
       while (true) {
         try {
-          await completeUpload(uploadId, headers);
+          const response = await completeUpload(uploadId, headers);
+          if (shouldUpdateList(targetPath)) {
+            const headerValue = response.headers["last-modified"] as
+              | string
+              | undefined;
+            const modified = headerValue
+              ? formatUtcTimestamp(new Date(headerValue))
+              : formatUtcTimestamp(new Date());
+            upsertEntry({
+              name: file.name,
+              path: targetPath,
+              is_dir: false,
+              size: file.size,
+              modified,
+              etag: response.headers["etag"] as string | undefined,
+            });
+          }
           completed = true;
           break;
         } catch (err) {
@@ -584,7 +626,8 @@ function App() {
       return;
     }
 
-    const path = joinPath(currentPath, trimmed);
+    const basePath = currentPath;
+    const path = joinPath(basePath, trimmed);
     setStatus(null);
     setError(null);
     try {
@@ -603,7 +646,15 @@ function App() {
       setFolderName("");
       setCreateFolderOpen(false);
       setStatus(t("createFolderSuccess"));
-      fetchEntries(currentPath);
+      if (shouldUpdateList(path) && currentPathRef.current === basePath) {
+        upsertEntry({
+          name: trimmed,
+          path,
+          is_dir: true,
+          size: 0,
+          modified: formatUtcTimestamp(new Date()),
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("createFolderFailed"));
     }
@@ -656,7 +707,6 @@ function App() {
         setUploadProgress(100);
       }
       setStatus(t("completed"));
-      fetchEntries(currentPath);
     } catch (err) {
       if (isAbortError(err)) {
         setStatus(t("uploadCancelled"));
@@ -681,9 +731,10 @@ function App() {
     if (!deleteTarget) return;
     setStatus(null);
     setError(null);
+    const deletingPath = deleteTarget.path;
     try {
       const response = await fetch(
-        `${BASE_API}/delete?path=${encodeURIComponent(deleteTarget.path)}`,
+        `${BASE_API}/delete?path=${encodeURIComponent(deletingPath)}`,
         {
           method: "DELETE",
         },
@@ -696,7 +747,7 @@ function App() {
         throw new Error(t("deleteFailed"));
       }
       setStatus(t("deleteSuccess"));
-      fetchEntries(currentPath);
+      setEntries((prev) => prev.filter((item) => item.path !== deletingPath));
     } catch (err) {
       setError(err instanceof Error ? err.message : t("deleteFailed"));
     } finally {
