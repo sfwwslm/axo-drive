@@ -1,304 +1,49 @@
 import type { ChangeEvent, FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import "./App.css";
-
-type FileEntry = {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  modified?: string | null;
-  etag?: string | null;
-};
-
-type VersionInfo = {
-  version: string;
-  build_time: string;
-  build_env: string;
-};
-
-const BASE_API = "/api/files";
-const UPLOAD_API = "/api/upload";
-const AUTH_API = "/api/auth";
-const VERSION_API = "/api/version";
+import AuthCheckingScreen from "./components/AuthCheckingScreen";
+import CreateFolderModal from "./components/CreateFolderModal";
+import FilesTable from "./components/FilesTable";
+import ImagePreviewModal from "./components/ImagePreviewModal";
+import LoginScreen from "./components/LoginScreen";
+import UploadConflictModal from "./components/UploadConflictModal";
+import VideoPreviewModal from "./components/VideoPreviewModal";
+import {
+  AUTH_API,
+  BASE_API,
+  CHUNK_CONCURRENCY,
+  CHUNK_SIZE,
+  FILE_CONCURRENCY,
+  UPLOAD_API,
+  VERSION_API,
+} from "./constants";
+import type { MessageKey } from "./i18n";
+import { formatMessage, resolveLocale, translations } from "./i18n";
+import type {
+  FileEntry,
+  Locale,
+  UploadConflictAction,
+  UploadConflictState,
+  VersionInfo,
+} from "./types";
+import {
+  buildPreviewUrl,
+  isAbortError,
+  isImageFile,
+  isVideoFile,
+  joinPath,
+} from "./utils";
 
 axios.defaults.withCredentials = true;
 
-const joinPath = (base: string, segment: string) => {
-  if (!segment) return base;
-  return base ? `${base}/${segment}` : segment;
-};
-
-const formatBytes = (value: number) => {
-  if (value === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.floor(Math.log(value) / Math.log(1024));
-  const number = value / Math.pow(1024, index);
-  return `${number.toFixed(1)} ${units[index]}`;
-};
-
-const imageExtensions = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "bmp",
-  "svg",
-  "avif",
-]);
-
-const videoExtensions = new Set(["mp4", "webm", "ogg", "mov", "m4v"]);
-
-const isImageFile = (name: string) => {
-  const dotIndex = name.lastIndexOf(".");
-  if (dotIndex === -1) return false;
-  const ext = name.slice(dotIndex + 1).toLowerCase();
-  return imageExtensions.has(ext);
-};
-
-const isVideoFile = (name: string) => {
-  const dotIndex = name.lastIndexOf(".");
-  if (dotIndex === -1) return false;
-  const ext = name.slice(dotIndex + 1).toLowerCase();
-  return videoExtensions.has(ext);
-};
-
-const buildPreviewUrl = (path: string) =>
-  `${BASE_API}/download?path=${encodeURIComponent(path)}`;
-
-const CHUNK_SIZE = 16 * 1024 * 1024;
-const CHUNK_CONCURRENCY = 3;
-const FILE_CONCURRENCY = 2;
-
-type Locale = "zh" | "en";
-
-const resolveLocale = (): Locale => {
-  if (typeof navigator === "undefined") return "en";
-  const language = navigator.language?.toLowerCase() ?? "en";
-  return language.startsWith("zh") ? "zh" : "en";
-};
-
-const translations = {
-  zh: {
-    loadDirFailedWithStatus: "无法加载目录: {status}",
-    readDirFailed: "读取目录失败",
-    uploadCancelled: "上传已取消",
-    initUploadFailed: "初始化上传失败",
-    uploading: "上传中",
-    uploadingEllipsis: "上传中…",
-    verifying: "校验中",
-    downloadComplete: "下载完成",
-    downloadCancelled: "下载已取消",
-    downloadFailed: "下载失败",
-    uploadConflictTitle: "文件冲突",
-    uploadConflictMessage: "该文件已在你上传期间被其他人修改。请选择处理方式。",
-    uploadConflictReload: "重新加载并重试",
-    uploadConflictOverwrite: "强制覆盖",
-    uploadConflictSaveAs: "另存为新文件",
-    uploadConflictCancel: "取消上传",
-    enterFolderName: "请输入文件夹名称",
-    createFolderFailed: "创建目录失败",
-    createFolderSuccess: "目录创建成功",
-    waiting: "等待中",
-    completed: "已完成",
-    uploadFailed: "上传失败",
-    deleteFailed: "删除失败",
-    deleteSuccess: "删除成功",
-    invalidCredentials: "账号或密码错误",
-    loginFailed: "登录失败",
-    logoutFailed: "登出失败",
-    tagline: "轻量、安全的局域网文件管理",
-    checkingAuth: "正在检查登录状态…",
-    username: "用户名",
-    password: "密码",
-    loggingIn: "登录中…",
-    login: "登录",
-    loggingOut: "正在退出…",
-    logout: "退出登录",
-    uploadFile: "上传文件",
-    cancelUpload: "取消上传",
-    createFolder: "新建目录",
-    nameHeader: "名称",
-    typeHeader: "类型",
-    sizeHeader: "大小",
-    modifiedHeader: "修改时间",
-    actionsHeader: "操作",
-    loadingDir: "目录加载中…",
-    emptyDir: "空目录",
-    cancelDownload: "取消下载",
-    download: "下载",
-    delete: "删除",
-    folderNamePlaceholder: "输入目录名称",
-    cancel: "取消",
-    create: "创建",
-    entryCount: "{files} 文件 · {dirs} 文件夹",
-  },
-  en: {
-    loadDirFailedWithStatus: "Failed to load directory: {status}",
-    readDirFailed: "Failed to load directory",
-    uploadCancelled: "Upload cancelled",
-    initUploadFailed: "Failed to initialize upload",
-    uploading: "Uploading",
-    uploadingEllipsis: "Uploading…",
-    verifying: "Verifying",
-    downloadComplete: "Download complete",
-    downloadCancelled: "Download cancelled",
-    downloadFailed: "Download failed",
-    uploadConflictTitle: "File conflict",
-    uploadConflictMessage:
-      "This file was modified while you were uploading. Choose how to proceed.",
-    uploadConflictReload: "Reload and retry",
-    uploadConflictOverwrite: "Overwrite",
-    uploadConflictSaveAs: "Save as copy",
-    uploadConflictCancel: "Cancel upload",
-    enterFolderName: "Enter a folder name",
-    createFolderFailed: "Failed to create folder",
-    createFolderSuccess: "Folder created",
-    waiting: "Waiting",
-    completed: "Completed",
-    uploadFailed: "Upload failed",
-    deleteFailed: "Failed to delete",
-    deleteSuccess: "Deleted",
-    invalidCredentials: "Invalid username or password",
-    loginFailed: "Login failed",
-    logoutFailed: "Logout failed",
-    tagline: "Lightweight, secure LAN file manager",
-    checkingAuth: "Checking login status…",
-    username: "Username",
-    password: "Password",
-    loggingIn: "Signing in…",
-    login: "Sign in",
-    loggingOut: "Signing out…",
-    logout: "Sign out",
-    uploadFile: "Upload files",
-    cancelUpload: "Cancel upload",
-    createFolder: "Create folder",
-    nameHeader: "Name",
-    typeHeader: "Type",
-    sizeHeader: "Size",
-    modifiedHeader: "Modified",
-    actionsHeader: "Actions",
-    loadingDir: "Loading directory…",
-    emptyDir: "Empty directory",
-    cancelDownload: "Cancel download",
-    download: "Download",
-    delete: "Delete",
-    folderNamePlaceholder: "Folder name",
-    cancel: "Cancel",
-    create: "Create",
-    entryCount: "{files} files · {dirs} folders",
-  },
-} as const;
-
-type MessageKey = keyof typeof translations.en;
-
-const formatMessage = (
-  template: string,
-  vars?: Record<string, string | number>,
-) => {
-  if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? ""));
-};
-
-const isAbortError = (error: unknown) => {
-  if (error instanceof DOMException && error.name === "AbortError") {
-    return true;
-  }
-  if (axios.isAxiosError(error) && error.code === "ERR_CANCELED") {
-    return true;
-  }
-  return false;
-};
-
-type UploadConflictAction = "reload" | "overwrite" | "saveAs" | "cancel";
-
-type UploadConflictState = {
-  file: File;
-  targetPath: string;
-  uploadId: string;
-  existing?: FileEntry | null;
-};
-
-type LoginLogoProps = {
-  className?: string;
-  sleep?: boolean;
-};
-
-const LoginLogo = ({ className, sleep = false }: LoginLogoProps) => {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-
-  useEffect(() => {
-    const handleMove = (event: MouseEvent) => {
-      const svg = svgRef.current;
-      if (!svg) return;
-      if (svg.getAttribute("data-sleep") === "true") return;
-      const rect = svg.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const dx = event.clientX - centerX;
-      const dy = event.clientY - centerY;
-      const max = Math.min(rect.width, rect.height) / 2;
-      const nx = Math.max(-1, Math.min(1, dx / max));
-      const ny = Math.max(-1, Math.min(1, dy / max));
-      const offset = 3.5;
-      svg.style.setProperty("--eye-x", `${nx * offset}px`);
-      svg.style.setProperty("--eye-y", `${ny * offset}px`);
-    };
-
-    window.addEventListener("mousemove", handleMove);
-    return () => window.removeEventListener("mousemove", handleMove);
-  }, []);
-
-  return (
-    <svg
-      ref={svgRef}
-      className={className}
-      data-sleep={sleep ? "true" : "false"}
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 256 256"
-      role="img"
-      aria-label="AxoDrive"
-    >
-      <path
-        d="M64 92C64 71.908 80.908 55 101 55H155C175.092 55 192 71.908 192 92V160C192 180.092 175.092 197 155 197H101C80.908 197 64 180.092 64 160V92Z"
-        fill="#D4E5F6"
-      />
-      <path
-        d="M128 74C160.078 74 186 99.922 186 132C186 164.078 160.078 190 128 190C95.922 190 70 164.078 70 132C70 99.922 95.922 74 128 74Z"
-        fill="#F7FBFF"
-      />
-      <path
-        d="M84 108L56 88"
-        stroke="#3B82F6"
-        strokeWidth="10"
-        strokeLinecap="round"
-      />
-      <path
-        d="M172 108L200 88"
-        stroke="#3B82F6"
-        strokeWidth="10"
-        strokeLinecap="round"
-      />
-      <path
-        d="M96 150C96 150 112 162 128 162C144 162 160 150 160 150"
-        fill="none"
-        stroke="#1D4ED8"
-        strokeWidth="10"
-        strokeLinecap="round"
-      />
-      <circle className="eye" cx="104" cy="124" r="8" fill="#1E3A8A" />
-      <circle className="eye" cx="152" cy="124" r="8" fill="#1E3A8A" />
-    </svg>
-  );
-};
-
 function App() {
   const [locale] = useState<Locale>(resolveLocale);
-  const t = (key: MessageKey, vars?: Record<string, string | number>) =>
-    formatMessage(translations[locale][key], vars);
+  const t = useCallback(
+    (key: MessageKey, vars?: Record<string, string | number>) =>
+      formatMessage(translations[locale][key], vars),
+    [locale],
+  );
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [loading, setLoading] = useState(false);
@@ -311,7 +56,6 @@ function App() {
     src: string;
     name: string;
   } | null>(null);
-  const previewTouchStartX = useRef<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
@@ -346,30 +90,33 @@ function App() {
     return `${BASE_API}/list${query ? `?${query}` : ""}`;
   };
 
-  const fetchEntries = async (path = currentPath) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(listUrl(path));
-      if (response.status === 401) {
-        setAuthRequired(true);
+  const fetchEntries = useCallback(
+    async (path: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(listUrl(path));
+        if (response.status === 401) {
+          setAuthRequired(true);
+          return null;
+        }
+        if (!response.ok) {
+          throw new Error(
+            t("loadDirFailedWithStatus", { status: response.status }),
+          );
+        }
+        const data: FileEntry[] = await response.json();
+        setEntries(data);
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t("readDirFailed"));
         return null;
+      } finally {
+        setLoading(false);
       }
-      if (!response.ok) {
-        throw new Error(
-          t("loadDirFailedWithStatus", { status: response.status }),
-        );
-      }
-      const data: FileEntry[] = await response.json();
-      setEntries(data);
-      return data;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("readDirFailed"));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [t],
+  );
 
   const cancelUpload = () => {
     if (!uploading) return;
@@ -456,8 +203,7 @@ function App() {
   useEffect(() => {
     if (authRequired || !authChecked) return;
     fetchEntries(currentPath);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPath, authRequired, authChecked]);
+  }, [currentPath, authRequired, authChecked, fetchEntries]);
 
   const handleAuthError = (err: unknown) => {
     if (axios.isAxiosError(err) && err.response?.status === 401) {
@@ -812,6 +558,22 @@ function App() {
     }
   }, [previewIndex, imageEntries.length]);
 
+  const handleImagePreview = (entry: FileEntry) => {
+    const idx = imageEntries.findIndex((item) => item.path === entry.path);
+    if (idx >= 0) {
+      setPreviewVideo(null);
+      setPreviewIndex(idx);
+    }
+  };
+
+  const handleVideoPreview = (entry: FileEntry) => {
+    setPreviewIndex(null);
+    setPreviewVideo({
+      src: buildPreviewUrl(entry.path),
+      name: entry.name,
+    });
+  };
+
   const handleCreateFolder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = folderName.trim();
@@ -979,68 +741,23 @@ function App() {
   }, [authRequired]);
 
   if (!authChecked) {
-    return (
-      <div className="app-shell login-shell">
-        <div className="login-hero">
-          <div className="login-brand">
-            <span className="brand-title">AxoDrive</span>
-            <p className="login-tagline">{t("tagline")}</p>
-          </div>
-          <section className="panel login-panel">
-            <div className="login-logo-wrap">
-              <LoginLogo className="login-logo" />
-            </div>
-            <p className="login-loading">{t("checkingAuth")}</p>
-          </section>
-        </div>
-      </div>
-    );
+    return <AuthCheckingScreen t={t} />;
   }
 
   if (authRequired) {
     return (
-      <div className="app-shell login-shell">
-        <div className="login-hero">
-          <div className="login-brand">
-            <span className="brand-title">AxoDrive</span>
-            <p className="login-tagline">{t("tagline")}</p>
-          </div>
-          <section className="panel login-panel">
-            <div className="login-logo-wrap">
-              <LoginLogo className="login-logo" sleep={loginFocus} />
-            </div>
-            <form className="login-form" onSubmit={handleLogin}>
-              <label>
-                {t("username")}
-                <input
-                  value={loginUsername}
-                  onChange={(event) => setLoginUsername(event.target.value)}
-                  onFocus={() => setLoginFocus(true)}
-                  onBlur={() => setLoginFocus(false)}
-                  autoComplete="username"
-                />
-              </label>
-              <label>
-                {t("password")}
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(event) => setLoginPassword(event.target.value)}
-                  onFocus={() => setLoginFocus(true)}
-                  onBlur={() => setLoginFocus(false)}
-                  autoComplete="current-password"
-                />
-              </label>
-              {loginError && <p className="status error">{loginError}</p>}
-              <div className="login-actions">
-                <button type="submit" disabled={loggingIn}>
-                  {loggingIn ? t("loggingIn") : t("login")}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      </div>
+      <LoginScreen
+        t={t}
+        username={loginUsername}
+        password={loginPassword}
+        loggingIn={loggingIn}
+        loginError={loginError}
+        loginFocus={loginFocus}
+        onUsernameChange={setLoginUsername}
+        onPasswordChange={setLoginPassword}
+        onLoginFocus={setLoginFocus}
+        onSubmit={handleLogin}
+      />
     );
   }
 
@@ -1147,298 +864,56 @@ function App() {
         {error && <p className="status error">{error}</p>}
         {status && !error && <p className="status success">{status}</p>}
 
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th className="col-index">#</th>
-                <th>{t("nameHeader")}</th>
-                <th className="col-type">{t("typeHeader")}</th>
-                <th className="col-size">{t("sizeHeader")}</th>
-                <th className="col-modified">{t("modifiedHeader")}</th>
-                <th>{t("actionsHeader")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="placeholder">
-                    {t("loadingDir")}
-                  </td>
-                </tr>
-              ) : entries.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="placeholder">
-                    {t("emptyDir")}
-                  </td>
-                </tr>
-              ) : (
-                entries.map((entry, index) => (
-                  <tr key={entry.path}>
-                    <td className="col-index">{index + 1}</td>
-                    <td className="name-cell">
-                      <div className="name-cell-content">
-                        {!entry.is_dir && isImageFile(entry.name) && (
-                          <button
-                            type="button"
-                            className="file-preview-btn"
-                            onClick={() => {
-                              const idx = imageEntries.findIndex(
-                                (item) => item.path === entry.path,
-                              );
-                              if (idx >= 0) {
-                                setPreviewVideo(null);
-                                setPreviewIndex(idx);
-                              }
-                            }}
-                            aria-label={`预览 ${entry.name}`}
-                          >
-                            <img
-                              className="file-preview"
-                              src={buildPreviewUrl(entry.path)}
-                              alt={entry.name}
-                              loading="lazy"
-                            />
-                          </button>
-                        )}
-                        {!entry.is_dir && isVideoFile(entry.name) && (
-                          <button
-                            type="button"
-                            className="file-preview-btn"
-                            onClick={() => {
-                              setPreviewIndex(null);
-                              setPreviewVideo({
-                                src: buildPreviewUrl(entry.path),
-                                name: entry.name,
-                              });
-                            }}
-                            aria-label={`播放 ${entry.name}`}
-                          >
-                            <span className="video-preview">▶</span>
-                          </button>
-                        )}
-                        <span
-                          className="tooltip-wrapper"
-                          data-tooltip={entry.name}
-                        >
-                          <button
-                            type="button"
-                            className={
-                              entry.is_dir ? "entry-name dir" : "entry-name"
-                            }
-                            onClick={() => handleDirectoryClick(entry)}
-                          >
-                            {entry.name}
-                          </button>
-                        </span>
-                      </div>
-                    </td>
-                    <td className="col-type">{entry.is_dir ? "📁" : "📄"}</td>
-                    <td className="col-size">
-                      {entry.is_dir ? "—" : formatBytes(entry.size)}
-                    </td>
-                    <td className="col-modified">{entry.modified ?? "—"}</td>
-                    <td className="actions">
-                      {!entry.is_dir && (
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => handleDownloadClick(entry)}
-                        >
-                          {downloadingPath === entry.path
-                            ? t("cancelDownload")
-                            : t("download")}
-                        </button>
-                      )}
-                      <button type="button" onClick={() => handleDelete(entry)}>
-                        {t("delete")}
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <FilesTable
+          t={t}
+          entries={entries}
+          loading={loading}
+          downloadingPath={downloadingPath}
+          onDirectoryClick={handleDirectoryClick}
+          onDownloadClick={handleDownloadClick}
+          onDelete={handleDelete}
+          onImagePreview={handleImagePreview}
+          onVideoPreview={handleVideoPreview}
+          isImageFile={isImageFile}
+          isVideoFile={isVideoFile}
+          buildPreviewUrl={buildPreviewUrl}
+        />
       </section>
 
       {createFolderOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setCreateFolderOpen(false)}
-        >
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3 className="modal-title">{t("createFolder")}</h3>
-            <form className="modal-form" onSubmit={handleCreateFolder}>
-              <input
-                className="modal-input"
-                placeholder={t("folderNamePlaceholder")}
-                value={folderName}
-                onChange={(event) => setFolderName(event.target.value)}
-                autoFocus
-              />
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="modal-cancel"
-                  onClick={() => setCreateFolderOpen(false)}
-                >
-                  {t("cancel")}
-                </button>
-                <button type="submit" className="modal-submit">
-                  {t("create")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CreateFolderModal
+          t={t}
+          folderName={folderName}
+          onFolderNameChange={setFolderName}
+          onClose={() => setCreateFolderOpen(false)}
+          onSubmit={handleCreateFolder}
+        />
       )}
 
       {previewEntry && (
-        <div className="modal-backdrop" onClick={closePreview}>
-          <div
-            className="modal image-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="image-modal-header">
-              <h3 className="modal-title">{previewEntry.name}</h3>
-              <button
-                type="button"
-                className="image-modal-close"
-                onClick={closePreview}
-              >
-                ×
-              </button>
-            </div>
-            <div
-              className="image-modal-body"
-              onTouchStart={(event) => {
-                previewTouchStartX.current = event.touches[0]?.clientX ?? null;
-              }}
-              onTouchEnd={(event) => {
-                const startX = previewTouchStartX.current;
-                if (startX === null) return;
-                const endX = event.changedTouches[0]?.clientX ?? startX;
-                const delta = endX - startX;
-                previewTouchStartX.current = null;
-                if (Math.abs(delta) < 40) return;
-                if (delta > 0) {
-                  goPrevPreview();
-                } else {
-                  goNextPreview();
-                }
-              }}
-            >
-              {imageEntries.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    className="image-nav-btn left"
-                    onClick={goPrevPreview}
-                    aria-label="上一张"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    className="image-nav-btn right"
-                    onClick={goNextPreview}
-                    aria-label="下一张"
-                  >
-                    ›
-                  </button>
-                </>
-              )}
-              <img
-                src={buildPreviewUrl(previewEntry.path)}
-                alt={previewEntry.name}
-              />
-            </div>
-          </div>
-        </div>
+        <ImagePreviewModal
+          entries={imageEntries}
+          previewIndex={previewIndex ?? 0}
+          onClose={closePreview}
+          onPrev={goPrevPreview}
+          onNext={goNextPreview}
+        />
       )}
 
       {previewVideo && (
-        <div className="modal-backdrop" onClick={() => setPreviewVideo(null)}>
-          <div
-            className="modal image-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="image-modal-header">
-              <h3 className="modal-title">{previewVideo.name}</h3>
-              <button
-                type="button"
-                className="image-modal-close"
-                onClick={() => setPreviewVideo(null)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="image-modal-body video-modal-body">
-              <video
-                src={previewVideo.src}
-                controls
-                preload="metadata"
-                playsInline
-              />
-            </div>
-          </div>
-        </div>
+        <VideoPreviewModal
+          name={previewVideo.name}
+          src={previewVideo.src}
+          onClose={() => setPreviewVideo(null)}
+        />
       )}
+
       {uploadConflict && (
-        <div
-          className="modal-backdrop"
-          onClick={() => resolveConflict("cancel")}
-        >
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3 className="modal-title">{t("uploadConflictTitle")}</h3>
-            <p className="modal-body">{t("uploadConflictMessage")}</p>
-            {uploadConflict.existing && (
-              <div className="conflict-meta">
-                <span>{uploadConflict.existing.name}</span>
-                <span>
-                  {uploadConflict.existing.modified ?? "—"} ·{" "}
-                  {formatBytes(uploadConflict.existing.size)}
-                </span>
-                {uploadConflict.existing.etag && (
-                  <span className="etag">
-                    ETag: {uploadConflict.existing.etag}
-                  </span>
-                )}
-              </div>
-            )}
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="modal-cancel"
-                onClick={() => resolveConflict("cancel")}
-              >
-                {t("uploadConflictCancel")}
-              </button>
-              <button
-                type="button"
-                className="modal-cancel"
-                onClick={() => resolveConflict("reload")}
-              >
-                {t("uploadConflictReload")}
-              </button>
-              <button
-                type="button"
-                className="modal-cancel"
-                onClick={() => resolveConflict("saveAs")}
-              >
-                {t("uploadConflictSaveAs")}
-              </button>
-              <button
-                type="button"
-                className="modal-submit"
-                onClick={() => resolveConflict("overwrite")}
-              >
-                {t("uploadConflictOverwrite")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <UploadConflictModal
+          t={t}
+          conflict={uploadConflict}
+          onResolve={resolveConflict}
+        />
       )}
       <footer className="footer">
         <div className="footer-content">

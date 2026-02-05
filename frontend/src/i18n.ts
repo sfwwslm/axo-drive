@@ -1,0 +1,133 @@
+import type { Locale } from "./types";
+
+// 读取浏览器语言并映射到内部语言枚举。
+export const resolveLocale = (): Locale => {
+  if (typeof navigator === "undefined") return "en";
+  const language = navigator.language?.toLowerCase() ?? "en";
+  return language.startsWith("zh") ? "zh" : "en";
+};
+
+// 文案字典，按语言区分。
+export const translations = {
+  zh: {
+    loadDirFailedWithStatus: "无法加载目录: {status}",
+    readDirFailed: "读取目录失败",
+    uploadCancelled: "上传已取消",
+    initUploadFailed: "初始化上传失败",
+    uploading: "上传中",
+    uploadingEllipsis: "上传中…",
+    verifying: "校验中",
+    downloadComplete: "下载完成",
+    downloadCancelled: "下载已取消",
+    downloadFailed: "下载失败",
+    uploadConflictTitle: "文件冲突",
+    uploadConflictMessage: "该文件已在你上传期间被其他人修改。请选择处理方式。",
+    uploadConflictReload: "重新加载并重试",
+    uploadConflictOverwrite: "强制覆盖",
+    uploadConflictSaveAs: "另存为新文件",
+    uploadConflictCancel: "取消上传",
+    enterFolderName: "请输入文件夹名称",
+    createFolderFailed: "创建目录失败",
+    createFolderSuccess: "目录创建成功",
+    waiting: "等待中",
+    completed: "已完成",
+    uploadFailed: "上传失败",
+    deleteFailed: "删除失败",
+    deleteSuccess: "删除成功",
+    invalidCredentials: "账号或密码错误",
+    loginFailed: "登录失败",
+    logoutFailed: "登出失败",
+    tagline: "轻量、安全的局域网文件管理",
+    checkingAuth: "正在检查登录状态…",
+    username: "用户名",
+    password: "密码",
+    loggingIn: "登录中…",
+    login: "登录",
+    loggingOut: "正在退出…",
+    logout: "退出登录",
+    uploadFile: "上传文件",
+    cancelUpload: "取消上传",
+    createFolder: "新建目录",
+    nameHeader: "名称",
+    typeHeader: "类型",
+    sizeHeader: "大小",
+    modifiedHeader: "修改时间",
+    actionsHeader: "操作",
+    loadingDir: "目录加载中…",
+    emptyDir: "空目录",
+    cancelDownload: "取消下载",
+    download: "下载",
+    delete: "删除",
+    folderNamePlaceholder: "输入目录名称",
+    cancel: "取消",
+    create: "创建",
+    entryCount: "{files} 文件 · {dirs} 文件夹",
+  },
+  en: {
+    loadDirFailedWithStatus: "Failed to load directory: {status}",
+    readDirFailed: "Failed to load directory",
+    uploadCancelled: "Upload cancelled",
+    initUploadFailed: "Failed to initialize upload",
+    uploading: "Uploading",
+    uploadingEllipsis: "Uploading…",
+    verifying: "Verifying",
+    downloadComplete: "Download complete",
+    downloadCancelled: "Download cancelled",
+    downloadFailed: "Download failed",
+    uploadConflictTitle: "File conflict",
+    uploadConflictMessage:
+      "This file was modified while you were uploading. Choose how to proceed.",
+    uploadConflictReload: "Reload and retry",
+    uploadConflictOverwrite: "Overwrite",
+    uploadConflictSaveAs: "Save as copy",
+    uploadConflictCancel: "Cancel upload",
+    enterFolderName: "Enter a folder name",
+    createFolderFailed: "Failed to create folder",
+    createFolderSuccess: "Folder created",
+    waiting: "Waiting",
+    completed: "Completed",
+    uploadFailed: "Upload failed",
+    deleteFailed: "Failed to delete",
+    deleteSuccess: "Deleted",
+    invalidCredentials: "Invalid username or password",
+    loginFailed: "Login failed",
+    logoutFailed: "Logout failed",
+    tagline: "Lightweight, secure LAN file manager",
+    checkingAuth: "Checking login status…",
+    username: "Username",
+    password: "Password",
+    loggingIn: "Signing in…",
+    login: "Sign in",
+    loggingOut: "Signing out…",
+    logout: "Sign out",
+    uploadFile: "Upload files",
+    cancelUpload: "Cancel upload",
+    createFolder: "Create folder",
+    nameHeader: "Name",
+    typeHeader: "Type",
+    sizeHeader: "Size",
+    modifiedHeader: "Modified",
+    actionsHeader: "Actions",
+    loadingDir: "Loading directory…",
+    emptyDir: "Empty directory",
+    cancelDownload: "Cancel download",
+    download: "Download",
+    delete: "Delete",
+    folderNamePlaceholder: "Folder name",
+    cancel: "Cancel",
+    create: "Create",
+    entryCount: "{files} files · {dirs} folders",
+  },
+} as const;
+
+// 文案 key 的类型约束。
+export type MessageKey = keyof typeof translations.en;
+
+// 基于模板的简单插值（{key}）。
+export const formatMessage = (
+  template: string,
+  vars?: Record<string, string | number>,
+) => {
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? ""));
+};
