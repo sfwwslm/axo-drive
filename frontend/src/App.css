@@ -500,6 +500,17 @@ header {
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
 }
 
+.video-modal-body {
+  padding: 0.5rem;
+}
+
+.video-modal-body video {
+  width: min(720px, 85vw);
+  max-height: 60vh;
+  border-radius: 10px;
+  background: #0b1220;
+}
+
 .modal-title {
   font-size: 1.1rem;
   margin: 0 0 1rem;
@@ -684,6 +695,20 @@ thead th {
   padding: 0;
   cursor: zoom-in;
   display: inline-flex;
+}
+
+.video-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f8fafc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
 }
 
 .col-index {
@@ -904,6 +929,13 @@ thead th {
     width: 36px;
     height: 36px;
     border-radius: 10px;
+  }
+
+  .video-preview {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 0.95rem;
   }
 
   .col-size {

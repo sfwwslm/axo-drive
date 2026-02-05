@@ -49,11 +49,20 @@ const imageExtensions = new Set([
   "avif",
 ]);
 
+const videoExtensions = new Set(["mp4", "webm", "ogg", "mov", "m4v"]);
+
 const isImageFile = (name: string) => {
   const dotIndex = name.lastIndexOf(".");
   if (dotIndex === -1) return false;
   const ext = name.slice(dotIndex + 1).toLowerCase();
   return imageExtensions.has(ext);
+};
+
+const isVideoFile = (name: string) => {
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+  const ext = name.slice(dotIndex + 1).toLowerCase();
+  return videoExtensions.has(ext);
 };
 
 const buildPreviewUrl = (path: string) =>
@@ -298,6 +307,10 @@ function App() {
   const [folderName, setFolderName] = useState("");
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<{
+    src: string;
+    name: string;
+  } | null>(null);
   const previewTouchStartX = useRef<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -1166,7 +1179,10 @@ function App() {
                               const idx = imageEntries.findIndex(
                                 (item) => item.path === entry.path,
                               );
-                              if (idx >= 0) setPreviewIndex(idx);
+                              if (idx >= 0) {
+                                setPreviewVideo(null);
+                                setPreviewIndex(idx);
+                              }
                             }}
                             aria-label={`预览 ${entry.name}`}
                           >
@@ -1176,6 +1192,22 @@ function App() {
                               alt={entry.name}
                               loading="lazy"
                             />
+                          </button>
+                        )}
+                        {!entry.is_dir && isVideoFile(entry.name) && (
+                          <button
+                            type="button"
+                            className="file-preview-btn"
+                            onClick={() => {
+                              setPreviewIndex(null);
+                              setPreviewVideo({
+                                src: buildPreviewUrl(entry.path),
+                                name: entry.name,
+                              });
+                            }}
+                            aria-label={`播放 ${entry.name}`}
+                          >
+                            <span className="video-preview">▶</span>
                           </button>
                         )}
                         <span
@@ -1313,6 +1345,34 @@ function App() {
               <img
                 src={buildPreviewUrl(previewEntry.path)}
                 alt={previewEntry.name}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewVideo && (
+        <div className="modal-backdrop" onClick={() => setPreviewVideo(null)}>
+          <div
+            className="modal image-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="image-modal-header">
+              <h3 className="modal-title">{previewVideo.name}</h3>
+              <button
+                type="button"
+                className="image-modal-close"
+                onClick={() => setPreviewVideo(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="image-modal-body video-modal-body">
+              <video
+                src={previewVideo.src}
+                controls
+                preload="metadata"
+                playsInline
               />
             </div>
           </div>
