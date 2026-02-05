@@ -4,6 +4,7 @@ import axios from "axios";
 import "./App.css";
 import AuthCheckingScreen from "./components/AuthCheckingScreen";
 import CreateFolderModal from "./components/CreateFolderModal";
+import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import FilesTable from "./components/FilesTable";
 import ImagePreviewModal from "./components/ImagePreviewModal";
 import LoginScreen from "./components/LoginScreen";
@@ -68,6 +69,7 @@ function App() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [loginFocus, setLoginFocus] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<FileEntry | null>(null);
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [uploadConflict, setUploadConflict] =
     useState<UploadConflictState | null>(null);
@@ -671,12 +673,17 @@ function App() {
     }
   };
 
-  const handleDelete = async (entry: FileEntry) => {
+  const requestDelete = (entry: FileEntry) => {
+    setDeleteTarget(entry);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
     setStatus(null);
     setError(null);
     try {
       const response = await fetch(
-        `${BASE_API}/delete?path=${encodeURIComponent(entry.path)}`,
+        `${BASE_API}/delete?path=${encodeURIComponent(deleteTarget.path)}`,
         {
           method: "DELETE",
         },
@@ -692,6 +699,8 @@ function App() {
       fetchEntries(currentPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("deleteFailed"));
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -871,7 +880,7 @@ function App() {
           downloadingPath={downloadingPath}
           onDirectoryClick={handleDirectoryClick}
           onDownloadClick={handleDownloadClick}
-          onDelete={handleDelete}
+          onDelete={requestDelete}
           onImagePreview={handleImagePreview}
           onVideoPreview={handleVideoPreview}
           isImageFile={isImageFile}
@@ -879,6 +888,15 @@ function App() {
           buildPreviewUrl={buildPreviewUrl}
         />
       </section>
+
+      {deleteTarget && (
+        <DeleteConfirmModal
+          t={t}
+          entry={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteConfirm}
+        />
+      )}
 
       {createFolderOpen && (
         <CreateFolderModal
