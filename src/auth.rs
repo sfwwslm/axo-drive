@@ -77,7 +77,7 @@ pub async fn auth_middleware(
     if path.starts_with("/webdav") {
         headers.insert(
             header::WWW_AUTHENTICATE,
-            HeaderValue::from_static(r#"Basic realm=\"AxoDrive\""#),
+            HeaderValue::from_static(r#"Basic realm="AxoDrive""#),
         );
     }
     Err(ApiError::Unauthorized(headers))
