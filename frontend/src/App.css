@@ -783,7 +783,7 @@ thead th {
   border-radius: 8px;
   font-size: 0.82rem;
   line-height: 1.2;
-  white-space: normal;
+  white-space: nowrap;
   word-break: break-all;
   opacity: 0;
   transform: translateY(-4px);
