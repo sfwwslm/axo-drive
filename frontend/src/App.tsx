@@ -129,7 +129,7 @@ function App() {
             t("loadDirFailedWithStatus", { status: response.status }),
           );
         }
-        const data: FileEntry[] = await response.json();
+        const data = (await response.json()) as FileEntry[];
         setEntries(data);
         return data;
       } catch (err) {
@@ -193,7 +193,7 @@ function App() {
         }
       }
     };
-    checkAuth();
+    void checkAuth();
     return () => {
       active = false;
     };
@@ -207,10 +207,10 @@ function App() {
     let active = true;
     const fetchVersion = async () => {
       try {
-        const response = await axios.get(VERSION_API);
+        const response = await axios.get<VersionInfo>(VERSION_API);
         const data = response.data;
-        if (active && data?.version) {
-          setVersionInfo(data as VersionInfo);
+        if (active && data.version) {
+          setVersionInfo(data);
         }
       } catch {
         if (active) {
@@ -218,7 +218,7 @@ function App() {
         }
       }
     };
-    fetchVersion();
+    void fetchVersion();
     return () => {
       active = false;
     };
@@ -226,7 +226,7 @@ function App() {
 
   useEffect(() => {
     if (authRequired || !authChecked) return;
-    fetchEntries(currentPath);
+    void fetchEntries(currentPath);
   }, [currentPath, authRequired, authChecked, fetchEntries]);
 
   useEffect(() => {
@@ -291,11 +291,14 @@ function App() {
     targetPath: string,
     onChunk: (chunkBytes: number) => void,
   ) => {
-    const initResponse = await axios.post(`${UPLOAD_API}/init`, {
-      name: targetPath,
-      totalSize: file.size,
-    });
-    const uploadId = initResponse.data?.uploadId as string | undefined;
+    const initResponse = await axios.post<{ uploadId?: string }>(
+      `${UPLOAD_API}/init`,
+      {
+        name: targetPath,
+        totalSize: file.size,
+      },
+    );
+    const uploadId = initResponse.data.uploadId;
     if (!uploadId) {
       throw new Error(t("initUploadFailed"));
     }
@@ -534,7 +537,7 @@ function App() {
     setDownloadProgress(0);
 
     try {
-      const response = await axios.get(`${BASE_API}/download`, {
+      const response = await axios.get<Blob>(`${BASE_API}/download`, {
         params: { path: entry.path },
         responseType: "blob",
         signal: controller.signal,
@@ -549,7 +552,7 @@ function App() {
           setDownloadProgress(percent);
         },
       });
-      const blob = response.data as Blob;
+      const blob = response.data;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -766,7 +769,7 @@ function App() {
       });
       setAuthRequired(false);
       setLoginPassword("");
-      fetchEntries(currentPath);
+      await fetchEntries(currentPath);
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 401) {
         setLoginError(t("invalidCredentials"));
@@ -816,7 +819,9 @@ function App() {
         onUsernameChange={setLoginUsername}
         onPasswordChange={setLoginPassword}
         onLoginFocus={setLoginFocus}
-        onSubmit={handleLogin}
+        onSubmit={(event) => {
+          void handleLogin(event);
+        }}
       />
     );
   }
@@ -860,7 +865,9 @@ function App() {
         <button
           type="button"
           className="logout-btn"
-          onClick={handleLogout}
+          onClick={() => {
+            void handleLogout();
+          }}
           disabled={loggingOut}
         >
           {loggingOut ? t("loggingOut") : t("logout")}
@@ -896,7 +903,13 @@ function App() {
           </div>
           <div className="controls">
             <label className="upload-btn">
-              <input type="file" multiple onChange={handleUpload} />
+              <input
+                type="file"
+                multiple
+                onChange={(event) => {
+                  void handleUpload(event);
+                }}
+              />
               {uploading ? t("uploadingEllipsis") : t("uploadFile")}
             </label>
             {uploading && (
@@ -930,7 +943,9 @@ function App() {
           loading={loading}
           downloadingPath={downloadingPath}
           onDirectoryClick={handleDirectoryClick}
-          onDownloadClick={handleDownloadClick}
+          onDownloadClick={(entry) => {
+            void handleDownloadClick(entry);
+          }}
           onDelete={requestDelete}
           onImagePreview={handleImagePreview}
           onVideoPreview={handleVideoPreview}
@@ -945,7 +960,9 @@ function App() {
           t={t}
           entry={deleteTarget}
           onCancel={() => setDeleteTarget(null)}
-          onConfirm={handleDeleteConfirm}
+          onConfirm={() => {
+            void handleDeleteConfirm();
+          }}
         />
       )}
 
@@ -955,7 +972,9 @@ function App() {
           folderName={folderName}
           onFolderNameChange={setFolderName}
           onClose={() => setCreateFolderOpen(false)}
-          onSubmit={handleCreateFolder}
+          onSubmit={(event) => {
+            void handleCreateFolder(event);
+          }}
         />
       )}
 

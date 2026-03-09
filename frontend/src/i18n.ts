@@ -138,5 +138,7 @@ export const formatMessage = (
   vars?: Record<string, string | number>,
 ) => {
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? ""));
+  return template.replace(/\{(\w+)\}/g, (_match, key: string) =>
+    String(vars[key] ?? ""),
+  );
 };
