@@ -146,7 +146,7 @@ Mount at: `https://<host>:<https-port>/webdav/`. Shares the storage root with `A
 Or specify image name/tag:
 
 ```bash
-./scripts/build_docker.sh axo-drive v0.0.1
+./scripts/build_docker.sh axo-drive v0.1.0
 ```
 
 ### Docker Compose example
@@ -154,7 +154,7 @@ Or specify image name/tag:
 ```yaml
 services:
   axo-drive:
-    image: sfwwslm/axo-drive:0.0.1
+    image: sfwwslm/axo-drive:latest
     container_name: axo-drive
     ports:
       - "5005:5005"
@@ -173,5 +173,4 @@ services:
 The build script reads the version from `Cargo.toml` as the image tag by default, or you can pass one explicitly:
 
 ```bash
-./scripts/build_docker.sh axo-drive v0.0.1
-```
+./scripts/build_docker.sh axo-drive v0.1.0
