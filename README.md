@@ -105,7 +105,6 @@ cargo run -- -b 0.0.0.0 -p 8080 -P 8443 -s /data/axo-drive --auth-user axo --aut
 
 ## 安全说明
 
-- WebDAV 仅允许 HTTPS，避免 Basic Auth 明文传输。
 - Web UI Cookie 使用 HttpOnly，SameSite=Strict，并在 HTTPS 下标记 Secure。
 - 会话有 TTL 并定期清理，避免内存无限增长。
 - 登录有速率限制与锁定策略。
@@ -138,7 +137,7 @@ cargo run -- -b 0.0.0.0 -p 8080 -P 8443 -s /data/axo-drive --auth-user axo --aut
 
 ## WebDAV
 
-挂载地址：`https://<host>:<https-port>/webdav/`。存储目录与 HTTP API 共用 `AXO_STORAGE_DIR`。
+挂载地址：`<http/https>://<host>:<https-port>/webdav/`。存储目录与 HTTP API 共用 `AXO_STORAGE_DIR`。
 
 ## Docker
 

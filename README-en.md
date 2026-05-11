@@ -102,7 +102,6 @@ cargo run -- -b 0.0.0.0 -p 8080 -P 8443 -s /data/axo-drive --auth-user axo --aut
 
 ## Security
 
-- WebDAV is HTTPS-only to avoid Basic Auth over plaintext.
 - Web UI cookies are HttpOnly, SameSite=Strict, and Secure on HTTPS.
 - Sessions are TTL-bounded and pruned periodically.
 - Login rate limiting and lockout are enabled.
@@ -135,7 +134,7 @@ Default chunk size: 16MB; temp chunk dir: `.axo/temp` (same level as storage by 
 
 ## WebDAV
 
-Mount at: `https://<host>:<https-port>/webdav/`. Shares the storage root with `AXO_STORAGE_DIR`.
+Mount at: `http://<host>:<http-port>/webdav/` or `https://<host>:<https-port>/webdav/`. Shares the storage root with `AXO_STORAGE_DIR`.
 
 ## Docker
 

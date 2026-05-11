@@ -12,7 +12,6 @@ pub enum ApiError {
     Internal(String),
     RangeNotSatisfiable(u64),
     Unauthorized(HeaderMap),
-    Forbidden(String),
     PreconditionFailed(String),
     Conflict(String),
     TooManyRequests(u64),
@@ -39,7 +38,6 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized(headers) => {
                 (StatusCode::UNAUTHORIZED, headers, "unauthorized").into_response()
             }
-            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg).into_response(),
             ApiError::PreconditionFailed(msg) => {
                 (StatusCode::PRECONDITION_FAILED, msg).into_response()
             }

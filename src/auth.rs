@@ -46,16 +46,12 @@ pub struct LoginAttempt {
 /// 认证中间件：校验 Cookie 或 Basic 认证。
 pub async fn auth_middleware(
     Extension(auth): Extension<Arc<AuthConfig>>,
-    Extension(scheme): Extension<RequestScheme>,
     jar: CookieJar,
     auth_header: Option<TypedHeader<Authorization<Basic>>>,
     req: Request<AxumBody>,
     next: middleware::Next,
 ) -> Result<axum::response::Response, ApiError> {
     let path = req.uri().path();
-    if path.starts_with("/webdav") && !is_https_request(req.headers(), scheme) {
-        return Err(ApiError::Forbidden("webdav requires https".into()));
-    }
     if is_auth_exempt_path(path) {
         return Ok(next.run(req).await);
     }
