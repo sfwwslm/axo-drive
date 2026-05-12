@@ -145,7 +145,7 @@ Mount at: `http://<host>:<http-port>/webdav/` or `https://<host>:<https-port>/we
 Or specify image name/tag:
 
 ```bash
-./scripts/build_docker.sh axo-drive v0.1.0
+./scripts/build_docker.sh axo-drive latest
 ```
 
 ### Docker Compose example
@@ -168,8 +168,3 @@ services:
       - ./data:/app/.axo/storage
     restart: unless-stopped
 ```
-
-The build script reads the version from `Cargo.toml` as the image tag by default, or you can pass one explicitly:
-
-```bash
-./scripts/build_docker.sh axo-drive v0.1.0

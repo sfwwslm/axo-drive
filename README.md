@@ -148,7 +148,7 @@ cargo run -- -b 0.0.0.0 -p 8080 -P 8443 -s /data/axo-drive --auth-user axo --aut
 或指定镜像名/标签：
 
 ```bash
-./scripts/build_docker.sh axo-drive v0.1.0
+./scripts/build_docker.sh axo-drive latest
 ```
 
 ### Docker Compose 示例
@@ -170,10 +170,4 @@ services:
     volumes:
       - ./data:/app/.axo/storage
     restart: unless-stopped
-```
-
-构建脚本默认会从 `Cargo.toml` 读取版本号作为镜像 tag，也支持显式传参：
-
-```bash
-./scripts/build_docker.sh axo-drive v0.1.0
 ```
